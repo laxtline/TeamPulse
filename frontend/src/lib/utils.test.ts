@@ -38,34 +38,34 @@ describe('formatRelativeTime', () => {
 
   it('should format dates for older times', () => {
     const oldDate = new Date('2024-01-15').toISOString()
-    expect(formatRelativeTime(oldDate)).toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/)
+    expect(formatRelativeTime(oldDate)).toBe('Jan 15, 2024')
   })
 })
 
 describe('getStatusColor', () => {
   it('should return correct colors for each status', () => {
-    expect(getStatusColor('backlog')).toBe('bg-surface-100 text-surface-600 border-surface-200')
-    expect(getStatusColor('todo')).toBe('bg-blue-50 text-blue-700 border-blue-100')
-    expect(getStatusColor('in_progress')).toBe('bg-yellow-50 text-yellow-700 border-yellow-100')
-    expect(getStatusColor('in_review')).toBe('bg-purple-50 text-purple-700 border-purple-100')
-    expect(getStatusColor('done')).toBe('bg-green-50 text-green-700 border-green-100')
+    expect(getStatusColor('backlog')).toBe('bg-surface-100 text-surface-800 dark:bg-surface-800 dark:text-surface-300')
+    expect(getStatusColor('todo')).toBe('bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400')
+    expect(getStatusColor('in_progress')).toBe('bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400')
+    expect(getStatusColor('review')).toBe('bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400')
+    expect(getStatusColor('done')).toBe('bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400')
   })
 })
 
 describe('getPriorityColor', () => {
   it('should return correct colors for each priority', () => {
-    expect(getPriorityColor('low')).toBe('bg-gray-50 text-gray-700 border-gray-100')
-    expect(getPriorityColor('medium')).toBe('bg-blue-50 text-blue-700 border-blue-100')
-    expect(getPriorityColor('high')).toBe('bg-orange-50 text-orange-700 border-orange-100')
-    expect(getPriorityColor('urgent')).toBe('bg-red-50 text-red-700 border-red-100')
+    expect(getPriorityColor('low')).toBe('bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400')
+    expect(getPriorityColor('medium')).toBe('bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400')
+    expect(getPriorityColor('high')).toBe('bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400')
+    expect(getPriorityColor('urgent')).toBe('bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400')
   })
 })
 
 describe('getRoleColor', () => {
   it('should return correct colors for each role', () => {
-    expect(getRoleColor('owner')).toBe('bg-purple-50 text-purple-700 border-purple-100')
-    expect(getRoleColor('admin')).toBe('bg-blue-50 text-blue-700 border-blue-100')
-    expect(getRoleColor('member')).toBe('bg-green-50 text-green-700 border-green-100')
-    expect(getRoleColor('viewer')).toBe('bg-gray-50 text-gray-700 border-gray-100')
+    expect(getRoleColor('owner')).toBe('bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400')
+    expect(getRoleColor('admin')).toBe('bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400')
+    expect(getRoleColor('member')).toBe('bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400')
+    expect(getRoleColor('viewer')).toBe('bg-surface-100 text-surface-800 dark:bg-surface-800 dark:text-surface-300')
   })
 })

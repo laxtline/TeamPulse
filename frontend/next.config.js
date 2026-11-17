@@ -3,6 +3,8 @@ const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
   async headers() {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'
     return [
       {
         source: '/:path*',
@@ -16,7 +18,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https:",
               "font-src 'self' data:",
-              "connect-src 'self' wss: https:",
+              `connect-src 'self' ${apiUrl} ${wsUrl} wss: https:`,
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'"

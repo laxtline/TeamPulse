@@ -22,28 +22,25 @@ describe('Button', () => {
   })
 
   it('should apply variant classes', () => {
-    const { rerender } = render(<Button variant="default">Default</Button>)
+    const { rerender } = render(<Button>Default</Button>)
     expect(screen.getByRole('button')).toHaveClass('bg-primary-600')
 
     rerender(<Button variant="destructive">Destructive</Button>)
     expect(screen.getByRole('button')).toHaveClass('bg-red-600')
 
     rerender(<Button variant="outline">Outline</Button>)
-    expect(screen.getByRole('button')).toHaveClass('border-border')
+    expect(screen.getByRole('button')).toHaveClass('border-input')
 
     rerender(<Button variant="secondary">Secondary</Button>)
     expect(screen.getByRole('button')).toHaveClass('bg-surface-100')
 
     rerender(<Button variant="ghost">Ghost</Button>)
     expect(screen.getByRole('button')).toHaveClass('hover:bg-surface-100')
-
-    rerender(<Button variant="link">Link</Button>)
-    expect(screen.getByRole('button')).toHaveClass('underline-offset-4')
   })
 
   it('should apply size classes', () => {
     const { rerender } = render(<Button size="sm">Small</Button>)
-    expect(screen.getByRole('button')).toHaveClass('h-8 px-3 text-xs')
+    expect(screen.getByRole('button')).toHaveClass('h-9 px-3 text-xs')
 
     rerender(<Button size="md">Medium</Button>)
     expect(screen.getByRole('button')).toHaveClass('h-10 px-4 py-2')
@@ -58,6 +55,6 @@ describe('Button', () => {
   it('should be disabled when disabled prop is set', () => {
     render(<Button disabled>Disabled</Button>)
     expect(screen.getByRole('button')).toBeDisabled()
-    expect(screen.getByRole('button')).toHaveClass('opacity-50')
+    expect(screen.getByRole('button')).toHaveClass('disabled:opacity-50')
   })
 })

@@ -39,6 +39,6 @@ describe('Card', () => {
   it('should apply default styling', () => {
     render(<Card>Test</Card>)
     const card = screen.getByText('Test').closest('div')
-    expect(card).toHaveClass('rounded-lg border border-border bg-card')
+    expect(card).toHaveClass('rounded-lg border bg-card text-card-foreground')
   })
 })

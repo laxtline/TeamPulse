@@ -1,7 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock fetch globally
-global.fetch = vi.fn()
+// The API layer is built on axios, so we swap it out for a fake instance and
+// check the URLs and payloads our methods send.
+const mockInstance = {
+  get: vi.fn(),
+  post: vi.fn(),
+  patch: vi.fn(),
+  delete: vi.fn(),
+  interceptors: {
+    request: { use: vi.fn() },
+    response: { use: vi.fn() },
+  },
+}
+
+vi.mock('axios', () => ({
+  default: {
+    create: vi.fn(() => mockInstance),
+    post: vi.fn(),
+  },
+}))
 
 describe('API Client', () => {
   beforeEach(() => {
@@ -15,44 +32,27 @@ describe('API Client', () => {
         { id: '2', name: 'Team 2', slug: 'team-2', description: 'Another team' },
       ]
 
-      vi.mocked(fetch).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockTeams),
-      })
+      mockInstance.get.mockResolvedValueOnce({ data: mockTeams })
 
       const { teamsApi } = await import('./api')
       const result = await teamsApi.list()
 
-      expect(fetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v1/teams',
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-          }),
-          credentials: 'include',
-        })
-      )
+      expect(mockInstance.get).toHaveBeenCalledWith('/teams')
       expect(result).toEqual(mockTeams)
     })
 
     it('should create a team', async () => {
       const newTeam = { id: '3', name: 'New Team', slug: 'new-team', description: 'New team' }
 
-      vi.mocked(fetch).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(newTeam),
-      })
+      mockInstance.post.mockResolvedValueOnce({ data: newTeam })
 
       const { teamsApi } = await import('./api')
       const result = await teamsApi.create({ name: 'New Team', description: 'New team' })
 
-      expect(fetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v1/teams',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ name: 'New Team', description: 'New team' }),
-        })
-      )
+      expect(mockInstance.post).toHaveBeenCalledWith('/teams', {
+        name: 'New Team',
+        description: 'New team',
+      })
       expect(result).toEqual(newTeam)
     })
   })
@@ -64,28 +64,21 @@ describe('API Client', () => {
         { id: '2', title: 'Task 2', status: 'in_progress', priority: 'high' },
       ]
 
-      vi.mocked(fetch).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockTasks),
-      })
+      mockInstance.get.mockResolvedValueOnce({ data: mockTasks })
 
       const { tasksApi } = await import('./api')
       const result = await tasksApi.list('project-1')
 
-      expect(fetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v1/projects/project-1/tasks',
-        expect.any(Object)
-      )
+      expect(mockInstance.get).toHaveBeenCalledWith('/projects/project-1/tasks', {
+        params: undefined,
+      })
       expect(result).toEqual(mockTasks)
     })
 
     it('should create a task', async () => {
       const newTask = { id: '3', title: 'New Task', status: 'backlog', priority: 'medium' }
 
-      vi.mocked(fetch).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(newTask),
-      })
+      mockInstance.post.mockResolvedValueOnce({ data: newTask })
 
       const { tasksApi } = await import('./api')
       const result = await tasksApi.create('project-1', {
@@ -94,6 +87,11 @@ describe('API Client', () => {
         priority: 'medium',
       })
 
+      expect(mockInstance.post).toHaveBeenCalledWith('/projects/project-1/tasks', {
+        title: 'New Task',
+        status: 'backlog',
+        priority: 'medium',
+      })
       expect(result).toEqual(newTask)
     })
   })
@@ -106,18 +104,22 @@ describe('API Client', () => {
         reasoning: 'This task has high impact',
       }
 
-      vi.mocked(fetch).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockPrediction),
-      })
+      mockInstance.post.mockResolvedValueOnce({ data: mockPrediction })
 
       const { aiApi } = await import('./api')
-      const result = await aiApi.predictPriority({
-        title: 'Important task',
-        description: 'This is very important',
-        project_key: 'TEST',
+      const result = await aiApi.taskPriority({
+        task_title: 'Important task',
+        task_description: 'This is very important',
+        assignee_workload: 5,
+        project_velocity: 12,
       })
 
+      expect(mockInstance.post).toHaveBeenCalledWith('/ai/task-priority', {
+        task_title: 'Important task',
+        task_description: 'This is very important',
+        assignee_workload: 5,
+        project_velocity: 12,
+      })
       expect(result).toEqual(mockPrediction)
     })
   })
