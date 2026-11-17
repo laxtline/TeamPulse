@@ -4,8 +4,8 @@ test.describe('Kanban Board', () => {
   test.beforeEach(async ({ page }) => {
     // Login first
     await page.goto('/login')
-    await page.fill('input[type="email"]', 'john@teampulse.demo')
-    await page.fill('input[type="password"]', 'Demo@12345')
+    await page.fill('input[type="email"]', 'arjun@teampulse.ac')
+    await page.fill('input[type="password"]', 'Passcode@9938')
     await page.click('button:has-text("Sign in")')
     await expect(page).toHaveURL(/\/dashboard/)
   })

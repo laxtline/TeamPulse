@@ -63,9 +63,9 @@ export default function DashboardPage() {
     queryFn: async () => {
       if (!teams) return []
       return [
-        { user: 'John Doe', tasks: 8, points: 21 },
-        { user: 'Jane Smith', tasks: 6, points: 18 },
-        { user: 'Bob Wilson', tasks: 4, points: 13 },
+        { user: 'Arjun Sharma', tasks: 8, points: 21 },
+        { user: 'Priya Patel', tasks: 6, points: 18 },
+        { user: 'Rohan Verma', tasks: 4, points: 13 },
       ]
     },
     enabled: !!teams,

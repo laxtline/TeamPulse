@@ -113,7 +113,7 @@ Check it worked:
 ```bash
 curl -X POST https://teampulse-api.onrender.com/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"john@teampulse.demo","password":"Demo@12345"}'
+  -d '{"email":"arjun@teampulse.ac","password":"Passcode@9938"}'
 ```
 
 ## 5. Frontend on Vercel
@@ -273,7 +273,7 @@ Dockerfile, since it also reads `PORT`.
 # After the first deploy
 
 - `https://<api>/health` → `{"status":"ok", ...}`
-- Login with `john@teampulse.demo` / `Demo@12345` → lands on `/dashboard`
+- Login with `arjun@teampulse.ac` / `Passcode@9938` → lands on `/dashboard`
 - Team page shows 26 tasks, the board drags cards between columns
 - DevTools → Network → WS: `wss://<api>/api/v1/ws/...` with **101**
 - Google and GitHub buttons come back to `/dashboard`

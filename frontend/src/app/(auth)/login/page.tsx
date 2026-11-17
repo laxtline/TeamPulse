@@ -152,11 +152,13 @@ function LoginForm() {
           <div className="p-3 rounded-md bg-surface-100 dark:bg-surface-800 text-xs text-surface-600 dark:text-surface-400">
             <strong>Demo Credentials:</strong>
             <br />
-            john@teampulse.demo / Demo@12345
+            admin@teampulse.ac / Passcode@9938 (admin)
             <br />
-            jane@teampulse.demo / Demo@12345
+            arjun@teampulse.ac / Passcode@9938
             <br />
-            bob@teampulse.demo / Demo@12345
+            priya@teampulse.ac / Passcode@9938
+            <br />
+            rohan@teampulse.ac / Passcode@9938
           </div>
         </CardContent>
       </Card>

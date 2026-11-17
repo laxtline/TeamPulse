@@ -17,27 +17,27 @@ async def seed():
         # Create demo users
         users_data = [
             {
-                "email": "admin@teampulse.demo",
-                "password": "Demo@12345",
-                "full_name": "Admin User",
+                "email": "admin@teampulse.ac",
+                "password": "Passcode@9938",
+                "full_name": "SURYA",
                 "role": "admin"
             },
             {
-                "email": "john@teampulse.demo",
-                "password": "Demo@12345",
-                "full_name": "John Doe",
+                "email": "arjun@teampulse.ac",
+                "password": "Passcode@9938",
+                "full_name": "Arjun Sharma",
                 "role": "member"
             },
             {
-                "email": "jane@teampulse.demo",
-                "password": "Demo@12345",
-                "full_name": "Jane Smith",
+                "email": "priya@teampulse.ac",
+                "password": "Passcode@9938",
+                "full_name": "Priya Patel",
                 "role": "member"
             },
             {
-                "email": "bob@teampulse.demo",
-                "password": "Demo@12345",
-                "full_name": "Bob Wilson",
+                "email": "rohan@teampulse.ac",
+                "password": "Passcode@9938",
+                "full_name": "Rohan Verma",
                 "role": "member"
             },
         ]
@@ -58,7 +58,7 @@ async def seed():
                 await db.flush()
             users.append(user)
 
-        admin_user, john, jane, bob = users
+        admin_user, arjun, priya, rohan = users
 
         # Create demo team
         result = await db.execute(select(Team).where(Team.slug == "acme-corp"))
@@ -68,13 +68,13 @@ async def seed():
                 name="Acme Corp",
                 slug="acme-corp",
                 description="Demo team for TeamPulse",
-                owner_id=john.id,
+                owner_id=arjun.id,
             )
             db.add(team)
             await db.flush()
 
             # Add members
-            for user, role in [(john, "owner"), (jane, "admin"), (bob, "member")]:
+            for user, role in [(arjun, "owner"), (priya, "admin"), (rohan, "member")]:
                 member = TeamMember(team_id=team.id, user_id=user.id, role=role)
                 db.add(member)
 
@@ -99,18 +99,18 @@ async def seed():
 
         # Create tasks for Website Redesign
         web_tasks = [
-            {"title": "Design new homepage", "status": "done", "priority": "high", "assignee": jane, "story_points": 5},
-            {"title": "Implement responsive navigation", "status": "done", "priority": "medium", "assignee": bob, "story_points": 3},
-            {"title": "Create style guide", "status": "review", "priority": "medium", "assignee": jane, "story_points": 2},
-            {"title": "Build landing page components", "status": "in_progress", "priority": "high", "assignee": john, "story_points": 8},
-            {"title": "Optimize images and assets", "status": "todo", "priority": "low", "assignee": bob, "story_points": 2},
-            {"title": "Set up CI/CD pipeline", "status": "backlog", "priority": "high", "assignee": john, "story_points": 5},
-            {"title": "Write documentation", "status": "backlog", "priority": "low", "assignee": jane, "story_points": 3},
-            {"title": "Cross-browser testing", "status": "backlog", "priority": "medium", "assignee": bob, "story_points": 3},
-            {"title": "Performance audit", "status": "backlog", "priority": "medium", "assignee": john, "story_points": 5},
-            {"title": "Accessibility review", "status": "backlog", "priority": "high", "assignee": jane, "story_points": 5},
-            {"title": "Deploy to staging", "status": "backlog", "priority": "high", "assignee": john, "story_points": 2},
-            {"title": "Launch to production", "status": "backlog", "priority": "urgent", "assignee": john, "story_points": 3},
+            {"title": "Design new homepage", "status": "done", "priority": "high", "assignee": priya, "story_points": 5},
+            {"title": "Implement responsive navigation", "status": "done", "priority": "medium", "assignee": rohan, "story_points": 3},
+            {"title": "Create style guide", "status": "review", "priority": "medium", "assignee": priya, "story_points": 2},
+            {"title": "Build landing page components", "status": "in_progress", "priority": "high", "assignee": arjun, "story_points": 8},
+            {"title": "Optimize images and assets", "status": "todo", "priority": "low", "assignee": rohan, "story_points": 2},
+            {"title": "Set up CI/CD pipeline", "status": "backlog", "priority": "high", "assignee": arjun, "story_points": 5},
+            {"title": "Write documentation", "status": "backlog", "priority": "low", "assignee": priya, "story_points": 3},
+            {"title": "Cross-browser testing", "status": "backlog", "priority": "medium", "assignee": rohan, "story_points": 3},
+            {"title": "Performance audit", "status": "backlog", "priority": "medium", "assignee": arjun, "story_points": 5},
+            {"title": "Accessibility review", "status": "backlog", "priority": "high", "assignee": priya, "story_points": 5},
+            {"title": "Deploy to staging", "status": "backlog", "priority": "high", "assignee": arjun, "story_points": 2},
+            {"title": "Launch to production", "status": "backlog", "priority": "urgent", "assignee": arjun, "story_points": 3},
         ]
 
         for i, t_data in enumerate(web_tasks):
@@ -120,7 +120,7 @@ async def seed():
                 due_date = datetime.now(timezone.utc) + timedelta(days=7 + i * 2)
                 task = Task(
                     project_id=web_project.id,
-                    reporter_id=john.id,
+                    reporter_id=arjun.id,
                     assignee_id=assignee.id,
                     position=float(i * 10),
                     due_date=due_date,
@@ -130,14 +130,14 @@ async def seed():
 
         # Create tasks for Mobile App v2
         mob_tasks = [
-            {"title": "Design app screens", "status": "done", "priority": "high", "assignee": jane, "story_points": 8},
-            {"title": "Set up React Native project", "status": "done", "priority": "high", "assignee": bob, "story_points": 5},
-            {"title": "Implement authentication flow", "status": "in_progress", "priority": "high", "assignee": john, "story_points": 8},
-            {"title": "Build home screen", "status": "todo", "priority": "medium", "assignee": jane, "story_points": 5},
-            {"title": "Add push notifications", "status": "backlog", "priority": "medium", "assignee": bob, "story_points": 5},
-            {"title": "Implement offline mode", "status": "backlog", "priority": "high", "assignee": john, "story_points": 8},
-            {"title": "App store preparation", "status": "backlog", "priority": "medium", "assignee": jane, "story_points": 3},
-            {"title": "Beta testing", "status": "backlog", "priority": "high", "assignee": john, "story_points": 5},
+            {"title": "Design app screens", "status": "done", "priority": "high", "assignee": priya, "story_points": 8},
+            {"title": "Set up React Native project", "status": "done", "priority": "high", "assignee": rohan, "story_points": 5},
+            {"title": "Implement authentication flow", "status": "in_progress", "priority": "high", "assignee": arjun, "story_points": 8},
+            {"title": "Build home screen", "status": "todo", "priority": "medium", "assignee": priya, "story_points": 5},
+            {"title": "Add push notifications", "status": "backlog", "priority": "medium", "assignee": rohan, "story_points": 5},
+            {"title": "Implement offline mode", "status": "backlog", "priority": "high", "assignee": arjun, "story_points": 8},
+            {"title": "App store preparation", "status": "backlog", "priority": "medium", "assignee": priya, "story_points": 3},
+            {"title": "Beta testing", "status": "backlog", "priority": "high", "assignee": arjun, "story_points": 5},
         ]
 
         for i, t_data in enumerate(mob_tasks):
@@ -147,7 +147,7 @@ async def seed():
                 due_date = datetime.now(timezone.utc) + timedelta(days=5 + i * 3)
                 task = Task(
                     project_id=mob_project.id,
-                    reporter_id=john.id,
+                    reporter_id=arjun.id,
                     assignee_id=assignee.id,
                     position=float(i * 10),
                     due_date=due_date,
@@ -157,12 +157,12 @@ async def seed():
 
         # Create tasks for API Integration
         api_tasks = [
-            {"title": "Design API specification", "status": "done", "priority": "high", "assignee": john, "story_points": 3},
-            {"title": "Implement payment gateway", "status": "in_progress", "priority": "urgent", "assignee": bob, "story_points": 8},
-            {"title": "Add webhook handlers", "status": "review", "priority": "high", "assignee": jane, "story_points": 5},
-            {"title": "Write API tests", "status": "todo", "priority": "medium", "assignee": john, "story_points": 5},
-            {"title": "Rate limiting", "status": "backlog", "priority": "high", "assignee": bob, "story_points": 3},
-            {"title": "Documentation", "status": "backlog", "priority": "low", "assignee": jane, "story_points": 2},
+            {"title": "Design API specification", "status": "done", "priority": "high", "assignee": arjun, "story_points": 3},
+            {"title": "Implement payment gateway", "status": "in_progress", "priority": "urgent", "assignee": rohan, "story_points": 8},
+            {"title": "Add webhook handlers", "status": "review", "priority": "high", "assignee": priya, "story_points": 5},
+            {"title": "Write API tests", "status": "todo", "priority": "medium", "assignee": arjun, "story_points": 5},
+            {"title": "Rate limiting", "status": "backlog", "priority": "high", "assignee": rohan, "story_points": 3},
+            {"title": "Documentation", "status": "backlog", "priority": "low", "assignee": priya, "story_points": 2},
         ]
 
         for i, t_data in enumerate(api_tasks):
@@ -172,7 +172,7 @@ async def seed():
                 due_date = datetime.now(timezone.utc) + timedelta(days=3 + i * 2)
                 task = Task(
                     project_id=api_project.id,
-                    reporter_id=john.id,
+                    reporter_id=arjun.id,
                     assignee_id=assignee.id,
                     position=float(i * 10),
                     due_date=due_date,
@@ -183,10 +183,10 @@ async def seed():
         await db.commit()
         print("Seed data created successfully!")
         print("\nDemo accounts:")
-        print("  admin@teampulse.demo / Demo@12345")
-        print("  john@teampulse.demo / Demo@12345")
-        print("  jane@teampulse.demo / Demo@12345")
-        print("  bob@teampulse.demo / Demo@12345")
+        print("  admin@teampulse.ac / Passcode@9938")
+        print("  arjun@teampulse.ac / Passcode@9938")
+        print("  priya@teampulse.ac / Passcode@9938")
+        print("  rohan@teampulse.ac / Passcode@9938")
 
 
 if __name__ == "__main__":
