@@ -152,4 +152,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     maxAge: 7 * 24 * 60 * 60,
   },
   secret: process.env.NEXTAUTH_SECRET,
+  // Vercel and most reverse proxies forward the host header, which NextAuth
+  // rejects unless we trust it.
+  trustHost: true,
 })

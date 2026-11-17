@@ -4,8 +4,20 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
+
+def database_url() -> str:
+    """Hosting providers give out a plain postgresql:// url, but sqlalchemy
+    needs the asyncpg driver spelled out. asyncpg also wants ssl=require
+    instead of the libpq style sslmode=require."""
+    url = settings.DATABASE_URL
+    if url.startswith("postgresql://"):
+        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+    url = url.replace("sslmode=require", "ssl=require")
+    return url
+
+
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    database_url(),
     echo=settings.DEBUG,
     pool_pre_ping=True,
     pool_size=10,

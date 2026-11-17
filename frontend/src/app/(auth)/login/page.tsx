@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -21,7 +21,7 @@ const loginSchema = z.object({
 
 type LoginFormData = z.infer<typeof loginSchema>
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
@@ -161,5 +161,21 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+// useSearchParams() needs a Suspense boundary, otherwise `next build` fails
+// while prerendering this page.
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white dark:from-surface-900 dark:to-surface-950 p-4">
+          <p className="text-surface-500">Loading...</p>
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   )
 }
