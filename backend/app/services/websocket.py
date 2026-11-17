@@ -102,25 +102,37 @@ class ConnectionManager:
     async def _listen_redis(self):
         if not self._redis:
             return
-        pubsub = self._redis.pubsub()
-        await pubsub.psubscribe("team:*")
-        try:
-            async for message in pubsub.listen():
-                if message["type"] == "pmessage":
-                    channel = message["channel"]
-                    team_id_str = channel.decode() if isinstance(channel, bytes) else channel
-                    team_id_str = team_id_str.replace("team:", "")
+
+        # Hosted redis drops idle pubsub connections now and then. If that
+        # happens we just resubscribe, otherwise real-time updates go quiet
+        # until the next restart.
+        while True:
+            pubsub = None
+            try:
+                pubsub = self._redis.pubsub()
+                await pubsub.psubscribe("team:*")
+                async for message in pubsub.listen():
+                    if message["type"] == "pmessage":
+                        channel = message["channel"]
+                        team_id_str = channel.decode() if isinstance(channel, bytes) else channel
+                        team_id_str = team_id_str.replace("team:", "")
+                        try:
+                            team_id = uuid.UUID(team_id_str)
+                            data = json.loads(message["data"])
+                            await self.broadcast_to_team(team_id, data["event"], data["data"])
+                        except Exception:
+                            pass
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await asyncio.sleep(3)
+            finally:
+                if pubsub:
                     try:
-                        team_id = uuid.UUID(team_id_str)
-                        data = json.loads(message["data"])
-                        await self.broadcast_to_team(team_id, data["event"], data["data"])
+                        await pubsub.unsubscribe("team:*")
+                        await pubsub.close()
                     except Exception:
                         pass
-        except asyncio.CancelledError:
-            pass
-        finally:
-            await pubsub.unsubscribe("team:*")
-            await pubsub.close()
 
     async def publish_event(self, team_id: uuid.UUID, event: str, data: dict):
         if self._redis:

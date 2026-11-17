@@ -15,19 +15,48 @@ from app.services.task import TaskService
 from app.services.ai import AIService
 from app.dependencies.auth import get_current_user, get_db
 from app.models.user import User
+from app.models.project import Project
+from app.services.websocket import manager
 
 router = APIRouter(prefix="/projects/{project_id}/tasks", tags=["tasks"])
+direct_router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+async def _team_id_for(db: AsyncSession, project_id: uuid.UUID):
+    """Events go out on the team channel, so we need the project's team."""
+    project = await db.get(Project, project_id)
+    return project.team_id if project else None
+
+
+def _actor(user: User) -> dict:
+    return {"id": str(user.id), "name": user.full_name}
 
 
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
     project_id: uuid.UUID,
     data: TaskCreate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     service = TaskService(db)
     task = await service.create_task(project_id, current_user.id, data)
+
+    team_id = await _team_id_for(db, project_id)
+    if team_id:
+        background_tasks.add_task(
+            manager.publish_event,
+            team_id,
+            "task:created",
+            {
+                "task_id": str(task.id),
+                "title": task.title,
+                "status": task.status,
+                "user": _actor(current_user),
+            },
+        )
+
     return TaskResponse.model_validate(task)
 
 
@@ -68,9 +97,6 @@ async def get_task(
 
 
 # The task page only knows the task id, so expose a flat lookup as well.
-direct_router = APIRouter(prefix="/tasks", tags=["tasks"])
-
-
 @direct_router.get("/{task_id}", response_model=TaskDetailResponse)
 async def get_task_by_id(
     task_id: uuid.UUID,
@@ -167,6 +193,7 @@ async def update_task(
     project_id: uuid.UUID,
     task_id: uuid.UUID,
     data: TaskUpdate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -174,6 +201,13 @@ async def update_task(
     task = await service.update_task(task_id, current_user.id, data)
     if str(task.project_id) != str(project_id):
         raise HTTPException(status_code=404, detail="Task not found in this project")
+
+    team_id = await _team_id_for(db, project_id)
+    if team_id:
+        payload = TaskResponse.model_validate(task).model_dump(mode="json")
+        payload["user"] = _actor(current_user)
+        background_tasks.add_task(manager.publish_event, team_id, "task:updated", payload)
+
     return TaskResponse.model_validate(task)
 
 
@@ -191,19 +225,19 @@ async def move_task(
     if str(task.project_id) != str(project_id):
         raise HTTPException(status_code=404, detail="Task not found in this project")
 
-    from app.services.websocket import manager
-    background_tasks.add_task(
-        manager.publish_event,
-        task.project_id,  # This should be team_id - we'll fix in service
-        "task:moved",
-        {
-            "task_id": str(task.id),
-            "old_status": data.status,  # We don't have old status here
-            "new_status": task.status,
-            "position": task.position,
-            "user": {"id": str(current_user.id), "name": current_user.full_name}
-        }
-    )
+    team_id = await _team_id_for(db, project_id)
+    if team_id:
+        background_tasks.add_task(
+            manager.publish_event,
+            team_id,
+            "task:moved",
+            {
+                "task_id": str(task.id),
+                "new_status": task.status,
+                "position": task.position,
+                "user": _actor(current_user),
+            },
+        )
 
     return TaskResponse.model_validate(task)
 
@@ -213,6 +247,7 @@ async def assign_task(
     project_id: uuid.UUID,
     task_id: uuid.UUID,
     data: TaskAssign,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -220,6 +255,13 @@ async def assign_task(
     task = await service.assign_task(task_id, current_user.id, data)
     if str(task.project_id) != str(project_id):
         raise HTTPException(status_code=404, detail="Task not found in this project")
+
+    team_id = await _team_id_for(db, project_id)
+    if team_id:
+        payload = TaskResponse.model_validate(task).model_dump(mode="json")
+        payload["user"] = _actor(current_user)
+        background_tasks.add_task(manager.publish_event, team_id, "task:updated", payload)
+
     return TaskResponse.model_validate(task)
 
 
@@ -255,6 +297,7 @@ async def get_task_priority(
 async def delete_task(
     project_id: uuid.UUID,
     task_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -263,3 +306,12 @@ async def delete_task(
     if not task or str(task.project_id) != str(project_id):
         raise HTTPException(status_code=404, detail="Task not found in this project")
     await service.delete_task(task_id, current_user.id)
+
+    team_id = await _team_id_for(db, project_id)
+    if team_id:
+        background_tasks.add_task(
+            manager.publish_event,
+            team_id,
+            "task:deleted",
+            {"task_id": str(task_id), "user": _actor(current_user)},
+        )

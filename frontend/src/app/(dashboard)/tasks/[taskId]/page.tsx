@@ -101,7 +101,16 @@ export default function TaskDetailPage() {
   useWebSocket({
     projectId: task?.project_id,
     onCommentCreated: (comment: Comment) => {
-      queryClient.setQueryData(['comments', taskId], (old: Comment[] = []) => [...old, comment])
+      if (comment.user_id === session?.user?.id) return
+      queryClient.setQueryData(['comments', taskId], (old: Comment[] = []) => {
+        if (old.some((c) => c.id === comment.id)) return old
+        return [...old, comment]
+      })
+    },
+    onCommentDeleted: (data: any) => {
+      queryClient.setQueryData(['comments', taskId], (old: Comment[] = []) =>
+        old.filter((c) => c.id !== data.comment_id)
+      )
     },
     onTaskUpdated: (updatedTask: Task) => {
       if (updatedTask.id === taskId) {
