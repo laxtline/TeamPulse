@@ -14,10 +14,9 @@ interface KanbanCardProps {
   index: number
   sourceStatus: string
   onClick: () => void
-  onTaskMove: (taskId: string, status: string, position: number) => void
 }
 
-export function KanbanCard({ task, index, sourceStatus, onClick, onTaskMove }: KanbanCardProps) {
+export function KanbanCard({ task, index, sourceStatus, onClick }: KanbanCardProps) {
   const {
     attributes,
     listeners,

@@ -7,6 +7,7 @@ import { z } from 'zod'
 import Link from 'next/link'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { authApi } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
@@ -27,6 +28,7 @@ export default function LoginPage() {
   const error = searchParams.get('error')
 
   const [isLoading, setIsLoading] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const {
     register,
@@ -38,7 +40,12 @@ export default function LoginPage() {
 
   const handleSubmitForm = async (data: LoginFormData) => {
     setIsLoading(true)
+    setFormError(null)
     try {
+      // NextAuth's authorize() runs server-side, so the backend's httpOnly
+      // access/refresh cookies must be established by the browser itself.
+      await authApi.login({ email: data.email, password: data.password })
+
       const result = await signIn('credentials', {
         email: data.email,
         password: data.password,
@@ -47,13 +54,13 @@ export default function LoginPage() {
       })
 
       if (result?.error) {
-        // Handle error - could show toast
+        setFormError('Invalid email or password')
       } else {
         router.push(callbackUrl)
         router.refresh()
       }
     } catch (error) {
-      console.error('Login failed:', error)
+      setFormError('Invalid email or password')
     } finally {
       setIsLoading(false)
     }
@@ -77,9 +84,9 @@ export default function LoginPage() {
           <CardDescription>Sign in to your TeamPulse account</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && (
+          {(error || formError) && (
             <div className="p-3 rounded-md bg-red-50 text-red-600 text-sm dark:bg-red-900/20 dark:text-red-400">
-              {error === 'CredentialsSignin' ? 'Invalid email or password' : 'An error occurred. Please try again.'}
+              {formError || (error === 'CredentialsSignin' ? 'Invalid email or password' : 'An error occurred. Please try again.')}
             </div>
           )}
 

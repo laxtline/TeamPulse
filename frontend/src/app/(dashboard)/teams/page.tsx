@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { TeamCard } from '@/components/teams/TeamCard'
 import { CreateTeamModal } from '@/components/teams/CreateTeamModal'
 import { Button } from '@/components/ui/Button'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Plus, Users } from 'lucide-react'
 import { Team } from '@/types'
 
@@ -48,7 +49,7 @@ export default function TeamsPage() {
         <div className="flex items-center justify-center h-64">
           <LoadingSpinner size="lg" />
         </div>
-      ) : teams?.length === 0 ? (
+      ) : !teams?.length ? (
         <div className="text-center py-16">
           <Users className="h-16 w-16 mx-auto text-surface-300 dark:text-surface-600 mb-4" />
           <h3 className="text-xl font-semibold mb-2">No teams yet</h3>
@@ -60,7 +61,7 @@ export default function TeamsPage() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {teams.map((team) => (
+          {teams?.map((team) => (
             <TeamCard key={team.id} team={team} userRole="member" />
           ))}
         </div>

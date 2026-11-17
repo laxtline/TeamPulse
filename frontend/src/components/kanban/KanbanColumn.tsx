@@ -65,7 +65,6 @@ export function KanbanColumn({ status, title, tasks, onTaskMove, onTaskClick, on
             index={index}
             sourceStatus={status}
             onClick={() => onTaskClick(task)}
-            onTaskMove={onTaskMove}
           />
         ))}
         {tasks.length === 0 && (

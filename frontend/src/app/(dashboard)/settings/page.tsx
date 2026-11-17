@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { Avatar } from '@/components/ui/Avatar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
-import { Loader2, User, Shield, Bell, Key, Palette, Globe, Moon, Sun, Save, CheckCircle2 } from 'lucide-react'
+import { Loader2, User, Shield, Bell, Key, Palette, Globe, Moon, Sun, Save, CheckCircle2, MessageSquare, Calendar } from 'lucide-react'
 import { Toaster } from '@/components/ui/Toaster'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -28,8 +28,6 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState({
     full_name: session?.user?.full_name || '',
     email: session?.user?.email || '',
-    bio: '',
-    timezone: 'UTC',
   })
 
   // Password form state
@@ -72,20 +70,10 @@ export default function SettingsPage() {
     },
   })
 
-  const updateNotificationsMutation = useMutation({
-    mutationFn: authApi.updateNotifications,
-    onSuccess: () => {
-      toast.success('Notification preferences saved')
-    },
-    onError: () => {
-      toast.error('Failed to save preferences')
-    },
-  })
-
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSaving(true)
-    await updateProfileMutation.mutateAsync(profile)
+    await updateProfileMutation.mutateAsync({ full_name: profile.full_name })
     setIsSaving(false)
   }
 
@@ -103,7 +91,9 @@ export default function SettingsPage() {
 
   const handleNotificationsSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    await updateNotificationsMutation.mutateAsync(notifications)
+    // No notification backend yet, so these preferences stay in the browser.
+    localStorage.setItem('teampulse:notifications', JSON.stringify(notifications))
+    toast.success('Notification preferences saved')
   }
 
   return (
@@ -153,7 +143,7 @@ export default function SettingsPage() {
               <CardContent>
                 <form onSubmit={handleProfileSubmit} className="space-y-6">
                   <div className="flex items-center gap-6">
-                    <Avatar src={session?.user?.avatar_url} name={session?.user?.full_name} size="xl" />
+                    <Avatar src={session?.user?.avatar_url} name={session?.user?.full_name ?? undefined} size="xl" />
                     <div>
                       <h4 className="font-medium">Profile Picture</h4>
                       <p className="text-sm text-surface-500">Gravatar is used for profile pictures</p>
@@ -179,34 +169,8 @@ export default function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="label">Bio</label>
-                    <textarea
-                      value={profile.bio}
-                      onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
-                      rows={4}
-                      className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      placeholder="Tell us about yourself..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="label">Timezone</label>
-                    <select
-                      value={profile.timezone}
-                      onChange={(e) => setProfile({ ...profile, timezone: e.target.value })}
-                      className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <option value="UTC">UTC</option>
-                      <option value="America/New_York">Eastern Time (ET)</option>
-                      <option value="America/Chicago">Central Time (CT)</option>
-                      <option value="America/Denver">Mountain Time (MT)</option>
-                      <option value="America/Los_Angeles">Pacific Time (PT)</option>
-                      <option value="Europe/London">London (GMT/BST)</option>
-                      <option value="Europe/Paris">Paris (CET/CEST)</option>
-                      <option value="Asia/Tokyo">Tokyo (JST)</option>
-                      <option value="Asia/Singapore">Singapore (SGT)</option>
-                      <option value="Australia/Sydney">Sydney (AEST/AEDT)</option>
-                    </select>
+                    <label className="label">Email</label>
+                    <Input type="email" value={profile.email} disabled />
                   </div>
 
                   <div className="flex justify-end pt-4 border-t border-border">
@@ -387,7 +351,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="flex justify-end pt-4 border-t border-border">
-                    <Button type="submit" loading={updateNotificationsMutation.isPending}>
+                    <Button type="submit">
                       <Save className="h-4 w-4 mr-2" />
                       Save Preferences
                     </Button>
@@ -455,6 +419,3 @@ export default function SettingsPage() {
     </div>
   )
 }
-
-// Need to import MessageSquare and Calendar
-import { MessageSquare, Calendar } from 'lucide-react'

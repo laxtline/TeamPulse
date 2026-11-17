@@ -1,6 +1,7 @@
 'use client'
 
 import { useSession } from 'next-auth/react'
+import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { teamsApi, tasksApi, aiApi } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -134,12 +135,12 @@ export default function DashboardPage() {
               <Users className="h-5 w-5" />
               Your Teams
             </h3>
-            {teams?.length === 0 ? (
+            {!teams?.length ? (
               <p className="text-surface-500 text-center py-8">No teams yet</p>
             ) : (
               <div className="space-y-3">
-                {teams.map((team) => (
-                  <Link key={team.id} href={`/teams/${team.slug}`} className="block">
+                {teams?.map((team) => (
+                  <Link key={team.id} href={`/teams/${team.id}`} className="block">
                     <div className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-800/50 transition-colors">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
@@ -169,6 +170,3 @@ export default function DashboardPage() {
     </div>
   )
 }
-
-// Need to import Link
-import Link from 'next/link'

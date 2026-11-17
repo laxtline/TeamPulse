@@ -24,7 +24,7 @@ export function TeamCard({ team, userRole }: TeamCardProps) {
 
   return (
     <Link
-      href={`/teams/${team.slug}`}
+      href={`/teams/${team.id}`}
       className="card p-4 hover:shadow-md transition-shadow group"
     >
       <div className="flex items-start justify-between">

@@ -44,7 +44,7 @@ export function useWebSocket({
       return `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'}/api/v1/ws/projects/${projectId}?token=${accessToken}`
     }
     if (teamId) {
-      return `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'}/api/v1/ws/teams/${teamId}?token=${accessToken}`
+      return `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'}/api/v1/ws/${teamId}?token=${accessToken}`
     }
     return null
   }, [projectId, teamId, accessToken])

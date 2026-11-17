@@ -1,15 +1,16 @@
 'use client'
 
-import { ImageHTMLAttributes, forwardRef } from 'react'
-import { cn } from '@/lib/utils'
-import { getInitials } from '@/lib/utils'
+import { MouseEventHandler } from 'react'
+import { cn, getInitials } from '@/lib/utils'
 
-interface AvatarProps extends ImageHTMLAttributes<HTMLImageElement> {
+interface AvatarProps {
   src?: string | null
   alt?: string
   name?: string
   size?: 'sm' | 'md' | 'lg' | 'xl'
   shape?: 'circle' | 'square'
+  className?: string
+  onClick?: MouseEventHandler<HTMLDivElement>
 }
 
 const sizeClasses = {
@@ -19,41 +20,34 @@ const sizeClasses = {
   xl: 'h-16 w-16 text-lg',
 }
 
-export const Avatar = forwardRef<HTMLImageElement, AvatarProps>(
-  ({ className, src, alt, name, size = 'md', shape = 'circle', ...props }, ref) => {
-    const shapeClass = shape === 'circle' ? 'rounded-full' : 'rounded-lg'
-    const sizeClass = sizeClasses[size]
+export function Avatar({ className, src, alt, name, size = 'md', shape = 'circle', onClick }: AvatarProps) {
+  const shapeClass = shape === 'circle' ? 'rounded-full' : 'rounded-lg'
+  const sizeClass = sizeClasses[size]
 
-    const fallback = name ? getInitials(name) : '?'
+  const fallback = name ? getInitials(name) : '?'
 
-    if (src) {
-      return (
-        <img
-          ref={ref}
-          src={src}
-          alt={alt || name || 'Avatar'}
-          className={cn(sizeClass, shapeClass, 'object-cover', className)}
-          {...props}
-        />
-      )
-    }
-
+  if (src) {
     return (
-      <div
-        ref={ref}
-        className={cn(
-          sizeClass,
-          shapeClass,
-          'flex items-center justify-center font-medium bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400',
-          className
-        )}
-        aria-label={name || 'User avatar'}
-        {...props}
-      >
-        {fallback}
-      </div>
+      <img
+        src={src}
+        alt={alt || name || 'Avatar'}
+        className={cn(sizeClass, shapeClass, 'object-cover', className)}
+      />
     )
   }
-)
 
-Avatar.displayName = 'Avatar'
+  return (
+    <div
+      onClick={onClick}
+      className={cn(
+        sizeClass,
+        shapeClass,
+        'flex items-center justify-center font-medium bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400',
+        className
+      )}
+      aria-label={name || 'User avatar'}
+    >
+      {fallback}
+    </div>
+  )
+}

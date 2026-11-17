@@ -3,33 +3,30 @@
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tasksApi, commentsApi, aiApi } from '@/lib/api'
-import { PageHeader } from '@/components/layout/PageHeader'
 import { CommentThread } from '@/components/tasks/CommentThread'
 import { ActivityLog } from '@/components/tasks/ActivityLog'
-import { PriorityBadge } from '@/components/tasks/PriorityBadge'
 import { TaskHeader } from '@/components/tasks/TaskHeader'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
-import { Dropdown, DropdownTrigger, DropdownContent, DropdownItem } from '@/components/ui/Dropdown'
+import { Dropdown } from '@/components/ui/Dropdown'
 import { Avatar } from '@/components/ui/Avatar'
 import { PriorityIndicator } from '@/components/ai/PriorityIndicator'
-import { ArrowLeft, MoreHorizontal, Edit, Trash2, Flag, MessageSquare, Calendar, User, GitBranch, Zap, Loader2 } from 'lucide-react'
-import { Task, Comment, TaskStatus, TaskPriority } from '@/types'
+import { ArrowLeft, MoreHorizontal, Edit, Trash2, MessageSquare, Calendar, GitBranch, Zap, Loader2 } from 'lucide-react'
+import { Task, Comment, TaskStatus, TaskPriority, AIPriority } from '@/types'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { formatRelativeTime, getStatusColor, getPriorityColor, cn } from '@/lib/utils'
 import { useState } from 'react'
 import { useWebSocket } from '@/hooks/useWebSocket'
-import { useTeamStore } from '@/store/teamStore'
-import Link from 'next/link'
+import { useSession } from 'next-auth/react'
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'backlog', label: 'Backlog' },
   { value: 'todo', label: 'To Do' },
   { value: 'in_progress', label: 'In Progress' },
-  { value: 'in_review', label: 'In Review' },
+  { value: 'review', label: 'In Review' },
   { value: 'done', label: 'Done' },
 ]
 
@@ -45,9 +42,10 @@ export default function TaskDetailPage() {
   const taskId = params.taskId as string
   const router = useRouter()
   const queryClient = useQueryClient()
+  const { data: session } = useSession()
   const [isEditOpen, setIsEditOpen] = useState(false)
-  const [isCommentOpen, setIsCommentOpen] = useState(false)
   const [newComment, setNewComment] = useState('')
+  const [aiPriority, setAiPriority] = useState<AIPriority | null>(null)
 
   const { data: task, isLoading } = useQuery({
     queryKey: ['tasks', taskId],
@@ -62,19 +60,18 @@ export default function TaskDetailPage() {
   })
 
   const updateTaskMutation = useMutation({
-    mutationFn: (data: Partial<Task>) => tasksApi.update(task.project_id, taskId, data),
+    mutationFn: (data: Partial<Task>) => tasksApi.update(task?.project_id ?? '', taskId, data),
     onSuccess: (updatedTask) => {
       queryClient.setQueryData(['tasks', taskId], updatedTask)
-      queryClient.invalidateQueries({ queryKey: ['projects', task.project_id] })
+      queryClient.invalidateQueries({ queryKey: ['comments', taskId] })
       setIsEditOpen(false)
     },
   })
 
   const deleteTaskMutation = useMutation({
-    mutationFn: () => tasksApi.delete(task.project_id, taskId),
+    mutationFn: () => tasksApi.delete(task?.project_id ?? '', taskId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['projects', task.project_id] })
-      router.push(`/teams/${task.team_id}/projects/${task.project_id}`)
+      router.back()
     },
   })
 
@@ -87,24 +84,26 @@ export default function TaskDetailPage() {
   })
 
   const generateAIPriorityMutation = useMutation({
-    mutationFn: () => aiApi.predictPriority({
-      title: task.title,
-      description: task.description,
-      project_key: task.project_key_prefix,
-    }),
+    mutationFn: () =>
+      aiApi.taskPriority({
+        task_title: task?.title || '',
+        task_description: task?.description || undefined,
+        due_date: task?.due_date || undefined,
+        assignee_workload: 0,
+        project_velocity: 0,
+      }),
     onSuccess: (result) => {
-      if (result.priority && result.priority !== task.priority) {
-        updateTaskMutation.mutate({ priority: result.priority })
-      }
+      setAiPriority(result)
     },
   })
 
-  // WebSocket for real-time updates
-  useWebSocket(task.project_id, {
-    onCommentCreated: (comment) => {
+  // Real-time updates for this task's project.
+  useWebSocket({
+    projectId: task?.project_id,
+    onCommentCreated: (comment: Comment) => {
       queryClient.setQueryData(['comments', taskId], (old: Comment[] = []) => [...old, comment])
     },
-    onTaskUpdated: (updatedTask) => {
+    onTaskUpdated: (updatedTask: Task) => {
       if (updatedTask.id === taskId) {
         queryClient.setQueryData(['tasks', taskId], updatedTask)
       }
@@ -121,7 +120,7 @@ export default function TaskDetailPage() {
 
   if (!task) {
     return (
-      <div className="p-6 text-center">
+      <div className="p-6 text-center space-y-4">
         <h1 className="text-2xl font-bold">Task not found</h1>
         <Button variant="outline" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4 mr-2" />
@@ -145,53 +144,51 @@ export default function TaskDetailPage() {
           <Button variant="ghost" size="icon" onClick={() => router.back()}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <Link href={`/teams/${task.team_id}/projects/${task.project_id}`} className="text-sm text-surface-500 hover:underline">
-              {task.project_key_prefix} / {task.task_number}
-            </Link>
-            <h1 className="text-2xl font-bold mt-1">{task.title}</h1>
-          </div>
+          <h1 className="text-2xl font-bold">{task.title}</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Dropdown>
-            <DropdownTrigger asChild>
+          <Dropdown
+            trigger={
               <Button variant="ghost" size="icon">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
-            </DropdownTrigger>
-            <DropdownContent align="end" className="w-48">
-              <DropdownItem onClick={() => setIsEditOpen(true)}>
-                <Edit className="h-4 w-4 mr-2" />
-                Edit Task
-              </DropdownItem>
-              <DropdownItem onClick={() => generateAIPriorityMutation.mutate()} disabled={generateAIPriorityMutation.isPending}>
-                <Zap className="h-4 w-4 mr-2" />
-                {generateAIPriorityMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Generating...
-                  </>
+            }
+            items={[
+              {
+                label: 'Edit Task',
+                onClick: () => setIsEditOpen(true),
+                icon: <Edit className="h-4 w-4" />,
+              },
+              {
+                label: generateAIPriorityMutation.isPending ? 'Generating...' : 'AI Suggest Priority',
+                onClick: () => generateAIPriorityMutation.mutate(),
+                icon: generateAIPriorityMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  'AI Suggest Priority'
-                )}
-              </DropdownItem>
-              <DropdownItem onClick={() => { if (confirm('Delete this task?')) deleteTaskMutation.mutate() }} className="text-red-600" disabled={deleteTaskMutation.isPending}>
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete Task
-              </DropdownItem>
-            </DropdownContent>
-          </Dropdown>
+                  <Zap className="h-4 w-4" />
+                ),
+                disabled: generateAIPriorityMutation.isPending,
+              },
+              {
+                label: 'Delete Task',
+                onClick: () => {
+                  if (confirm('Delete this task?')) deleteTaskMutation.mutate()
+                },
+                icon: <Trash2 className="h-4 w-4" />,
+                destructive: true,
+                disabled: deleteTaskMutation.isPending,
+              },
+            ]}
+          />
         </div>
       </div>
 
-      {/* Task Header with Status, Priority, Assignee */}
-      <TaskHeader task={task} onStatusChange={(status) => updateTaskMutation.mutate({ status })} onPriorityChange={(priority) => updateTaskMutation.mutate({ priority })} onAssigneeChange={(assigneeId) => updateTaskMutation.mutate({ assignee_id: assigneeId })} />
+      <TaskHeader task={task} />
 
       {/* Main Content */}
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Left Column - Description & Details */}
+        {/* Left Column - Description & Discussion */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Description */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -201,25 +198,29 @@ export default function TaskDetailPage() {
             </CardHeader>
             <CardContent>
               {task.description ? (
-                <div className="prose prose-sm dark:prose-invert max-w-none">{task.description}</div>
+                <p className="whitespace-pre-wrap text-surface-700 dark:text-surface-300">{task.description}</p>
               ) : (
-                <Button variant="link" onClick={() => setIsEditOpen(true)} className="text-surface-500 hover:text-primary-600">
+                <Button variant="ghost" onClick={() => setIsEditOpen(true)} className="text-surface-500 hover:text-primary-600">
                   Add a description...
                 </Button>
               )}
             </CardContent>
           </Card>
 
-          {/* AI Priority Indicator */}
-          {task.ai_priority_score && (
-            <PriorityIndicator
-              score={task.ai_priority_score}
-              reasoning={task.ai_priority_reasoning}
-              suggestedPriority={task.ai_suggested_priority}
-            />
+          {(aiPriority || task.ai_priority) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="h-5 w-5" />
+                  AI Priority
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <PriorityIndicator priority={aiPriority || task.ai_priority || null} />
+              </CardContent>
+            </Card>
           )}
 
-          {/* Comments */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -229,16 +230,16 @@ export default function TaskDetailPage() {
             </CardHeader>
             <CardContent>
               <CommentThread
+                taskId={taskId}
                 comments={comments || []}
-                onAddComment={handleAddComment}
                 newComment={newComment}
                 setNewComment={setNewComment}
-                taskId={taskId}
+                onAddComment={handleAddComment}
+                currentUserId={session?.user?.id}
               />
             </CardContent>
           </Card>
 
-          {/* Activity Log */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -247,13 +248,13 @@ export default function TaskDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ActivityLog taskId={taskId} />
-            </CardContent          </Card>
+              <ActivityLog activities={task.activities || []} />
+            </CardContent>
+          </Card>
         </div>
 
         {/* Right Column - Details Sidebar */}
         <div className="space-y-6">
-          {/* Task Details */}
           <Card>
             <CardHeader>
               <CardTitle>Details</CardTitle>
@@ -261,7 +262,7 @@ export default function TaskDetailPage() {
             <CardContent className="space-y-4">
               <div>
                 <label className="text-xs font-medium text-surface-500 uppercase tracking-wider">Status</label>
-                <div className="mt-1 flex items-center gap-2">
+                <div className="mt-1">
                   <Badge variant="outline" className={cn(getStatusColor(task.status), 'text-sm')}>
                     {task.status.replace('_', ' ')}
                   </Badge>
@@ -271,7 +272,9 @@ export default function TaskDetailPage() {
               <div>
                 <label className="text-xs font-medium text-surface-500 uppercase tracking-wider">Priority</label>
                 <div className="mt-1">
-                  <PriorityBadge priority={task.priority} />
+                  <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                    {task.priority}
+                  </Badge>
                 </div>
               </div>
 
@@ -305,17 +308,10 @@ export default function TaskDetailPage() {
                 </div>
               )}
 
-              {task.story_points && (
+              {task.story_points !== null && (
                 <div>
                   <label className="text-xs font-medium text-surface-500 uppercase tracking-wider">Story Points</label>
                   <div className="mt-1 font-medium">{task.story_points}</div>
-                </div>
-              )}
-
-              {task.sprint_id && (
-                <div>
-                  <label className="text-xs font-medium text-surface-500 uppercase tracking-wider">Sprint</label>
-                  <div className="mt-1 font-medium">Sprint #{task.sprint_id}</div>
                 </div>
               )}
 
@@ -330,22 +326,6 @@ export default function TaskDetailPage() {
               </div>
             </CardContent>
           </Card>
-
-          {/* Tags */}
-          {task.tags && task.tags.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Tags</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {task.tags.map((tag) => (
-                    <Badge key={tag} variant="secondary">{tag}</Badge>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
 
@@ -356,22 +336,35 @@ export default function TaskDetailPage() {
         title="Edit Task"
         description="Update task details"
       >
-        <TaskEditForm task={task} onSubmit={updateTaskMutation.mutateAsync} onClose={() => setIsEditOpen(false)} isLoading={updateTaskMutation.isPending} />
+        <TaskEditForm
+          task={task}
+          onSubmit={updateTaskMutation.mutateAsync}
+          onClose={() => setIsEditOpen(false)}
+          isLoading={updateTaskMutation.isPending}
+        />
       </Modal>
     </div>
   )
 }
 
-function TaskEditForm({ task, onSubmit, onClose, isLoading }: { task: Task; onSubmit: (data: Partial<Task>) => Promise<void>; onClose: () => void; isLoading: boolean }) {
+function TaskEditForm({
+  task,
+  onSubmit,
+  onClose,
+  isLoading,
+}: {
+  task: Task
+  onSubmit: (data: Partial<Task>) => Promise<unknown>
+  onClose: () => void
+  isLoading: boolean
+}) {
   const [formData, setFormData] = useState({
     title: task.title,
     description: task.description || '',
     status: task.status,
     priority: task.priority,
-    assignee_id: task.assignee_id || '',
-    due_date: task.due_date || '',
+    due_date: task.due_date ? task.due_date.slice(0, 10) : '',
     story_points: task.story_points?.toString() || '',
-    tags: task.tags?.join(', ') || '',
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -381,16 +374,19 @@ function TaskEditForm({ task, onSubmit, onClose, isLoading }: { task: Task; onSu
       description: formData.description || undefined,
       status: formData.status as TaskStatus,
       priority: formData.priority as TaskPriority,
-      assignee_id: formData.assignee_id || undefined,
       due_date: formData.due_date || undefined,
       story_points: formData.story_points ? parseInt(formData.story_points) : undefined,
-      tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
     })
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <Input label="Title" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} required />
+      <Input
+        label="Title"
+        value={formData.title}
+        onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+        required
+      />
 
       <div>
         <label className="label">Description</label>
@@ -407,11 +403,13 @@ function TaskEditForm({ task, onSubmit, onClose, isLoading }: { task: Task; onSu
           <label className="label">Status</label>
           <select
             value={formData.status}
-            onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+            onChange={(e) => setFormData({ ...formData, status: e.target.value as TaskStatus })}
             className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {STATUS_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
             ))}
           </select>
         </div>
@@ -420,28 +418,16 @@ function TaskEditForm({ task, onSubmit, onClose, isLoading }: { task: Task; onSu
           <label className="label">Priority</label>
           <select
             value={formData.priority}
-            onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+            onChange={(e) => setFormData({ ...formData, priority: e.target.value as TaskPriority })}
             className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {PRIORITY_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
             ))}
           </select>
         </div>
-      </div>
-
-      <div>
-        <label className="label">Assignee</label>
-        <select
-          value={formData.assignee_id}
-          onChange={(e) => setFormData({ ...formData, assignee_id: e.target.value })}
-          className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <option value="">Unassigned</option>
-          {task.project_members?.map((member: any) => (
-            <option key={member.user_id} value={member.user_id}>{member.user_full_name}</option>
-          ))}
-        </select>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -466,20 +452,13 @@ function TaskEditForm({ task, onSubmit, onClose, isLoading }: { task: Task; onSu
         </div>
       </div>
 
-      <div>
-        <label className="label">Tags (comma separated)</label>
-        <input
-          type="text"
-          value={formData.tags}
-          onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-          className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          placeholder="bug, frontend, urgent"
-        />
-      </div>
-
       <div className="flex justify-end gap-2 pt-4 border-t border-border">
-        <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button type="submit" loading={isLoading}>Save Changes</Button>
+        <Button type="button" variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button type="submit" loading={isLoading}>
+          Save Changes
+        </Button>
       </div>
     </form>
   )

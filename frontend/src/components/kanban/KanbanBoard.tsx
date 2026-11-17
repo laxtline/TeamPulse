@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { KanbanColumn } from './KanbanColumn'
 import { TaskModal } from './TaskModal'
@@ -30,6 +30,12 @@ export function KanbanBoard({
 }: KanbanBoardProps) {
   const queryClient = useQueryClient()
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
+
+  // The board can mount before the project's tasks finish loading, so sync up
+  // once the query hands them over.
+  useEffect(() => {
+    setTasks(initialTasks)
+  }, [initialTasks])
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [creatingTaskStatus, setCreatingTaskStatus] = useState<TaskStatus>('backlog')

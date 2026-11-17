@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useState, ReactNode, Children, isValidElement, cloneElement } from 'react'
 import { cn } from '@/lib/utils'
 
 interface TabsContextType {
@@ -59,11 +59,11 @@ export function TabsList({ children, className }: TabsListProps) {
         className
       )}
     >
-      {React.Children.map(children, (child) => {
-        if (!React.isValidElement(child)) return child
-        return React.cloneElement(child, {
-          value: child.props.value,
-          isActive: child.props.value === value,
+      {Children.map(children, (child) => {
+        if (!isValidElement(child)) return child
+        return cloneElement(child as any, {
+          value: (child.props as any).value,
+          isActive: (child.props as any).value === value,
           onValueChange,
         })
       })}

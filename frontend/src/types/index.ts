@@ -17,6 +17,8 @@ export interface Team {
   owner_id: string
   created_at: string
   updated_at: string
+  members?: TeamMember[]
+  projects?: Project[]
 }
 
 export interface TeamMember {
@@ -40,18 +42,16 @@ export interface Project {
   updated_at: string
   task_count?: number
   task_counts?: Record<string, number>
+  tasks?: Task[]
 }
 
 export interface Task {
   id: string
   project_id: string
-  team_id: string
-  project_key_prefix: string
-  task_number: number
   title: string
   description: string | null
-  status: 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done'
-  priority: 'low' | 'medium' | 'high' | 'urgent'
+  status: TaskStatus
+  priority: TaskPriority
   assignee_id: string | null
   reporter_id: string | null
   story_points: number | null
@@ -62,12 +62,9 @@ export interface Task {
   updated_at: string
   assignee?: User | null
   reporter?: User | null
-  tags?: string[]
-  sprint_id?: string | null
-  project_members?: ProjectMember[]
-  ai_priority_score?: number
-  ai_priority_reasoning?: string
-  ai_suggested_priority?: TaskPriority
+  comments?: Comment[]
+  activities?: Activity[]
+  ai_priority?: AIPriority | null
 }
 
 export interface ProjectMember {

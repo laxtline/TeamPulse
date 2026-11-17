@@ -17,7 +17,7 @@ type InviteFormData = z.infer<typeof inviteSchema>
 interface InviteModalProps {
   isOpen: boolean
   onClose: () => void
-  onSubmit: (data: InviteFormData) => Promise<void>
+  onSubmit: (data: InviteFormData) => Promise<unknown>
   isLoading?: boolean
 }
 

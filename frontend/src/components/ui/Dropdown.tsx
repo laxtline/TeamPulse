@@ -3,7 +3,7 @@
 import { Fragment, ReactNode, useRef, useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 
-interface DropdownItem {
+export interface DropdownItem {
   label: string
   onClick: () => void
   icon?: ReactNode

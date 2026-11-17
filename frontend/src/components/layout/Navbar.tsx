@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Menu, Bell, Sun, Moon, Monitor, User, LogOut } from 'lucide-react'
+import { Menu, Bell, Sun, Moon, Monitor, User, LogOut, Settings } from 'lucide-react'
 import { useUIStore } from '@/store/uiStore'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -23,6 +23,8 @@ export function Navbar() {
     dark: Moon,
     system: Monitor,
   }
+
+  const ThemeIcon = themeIcons[theme] || Monitor
 
   const handleThemeChange = (newTheme: 'light' | 'dark' | 'system') => {
     setTheme(newTheme)
@@ -74,7 +76,7 @@ export function Navbar() {
             <Dropdown
               trigger={
                 <Button variant="ghost" size="icon" aria-label="Theme">
-                  <themeIcons[theme] className="h-5 w-5" />
+                  <ThemeIcon className="h-5 w-5" />
                 </Button>
               }
               items={[
@@ -91,7 +93,7 @@ export function Navbar() {
             <Dropdown
               trigger={
                 <Button variant="ghost" className="gap-2 px-2">
-                  <Avatar src={user?.avatar_url || null} name={user?.full_name} size="sm" />
+                  <Avatar src={user?.avatar_url || null} name={user?.full_name ?? undefined} size="sm" />
                   <span className="hidden sm:block text-sm font-medium">{user?.full_name}</span>
                 </Button>
               }

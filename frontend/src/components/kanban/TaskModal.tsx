@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Task, User } from '@/types'
+import { Task, TaskStatus, User } from '@/types'
 import { getPriorityColor, getStatusColor } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { Badge } from '@/components/ui/Badge'
@@ -31,10 +31,10 @@ interface TaskModalProps {
   onClose: () => void
   task: Task | null
   projectId: string
-  defaultStatus: string
+  defaultStatus: TaskStatus
   onSubmit: (data: TaskFormData) => Promise<void>
   onUpdate?: (task: Task) => void
-  members: User[]
+  members?: User[]
 }
 
 export function TaskModal({
@@ -45,7 +45,7 @@ export function TaskModal({
   defaultStatus,
   onSubmit,
   onUpdate,
-  members,
+  members = [],
 }: TaskModalProps) {
   const isEditing = !!task
   const [dueDate, setDueDate] = useState<string>('')

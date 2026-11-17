@@ -1,10 +1,10 @@
 'use client'
 
 import { Task } from '@/types'
-import { getPriorityColor, getStatusColor, formatDate, formatRelativeTime } from '@/lib/utils'
+import { getPriorityColor, getStatusColor, formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { Badge } from '@/components/ui/Badge'
-import { Calendar, UserCircle, Flag, Tag } from 'lucide-react'
+import { Calendar, UserCircle, Tag } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface TaskHeaderProps {
@@ -54,16 +54,7 @@ export function TaskHeader({ task }: TaskHeaderProps) {
         {task.due_date && (
           <div className={cn('flex items-center gap-2', new Date(task.due_date) < new Date() && 'text-red-600')}>
             <Calendar className="h-4 w-4" />
-            <span>
-              Due {formatDate(task.due_date)} ({formatRelativeTime(task.due_date)})
-            </span>
-          </div>
-        )}
-
-        {task.project_id && (
-          <div className="flex items-center gap-2">
-            <Flag className="h-4 w-4" />
-            <span>Project: {task.project_id}</span>
+            <span>Due {formatDate(task.due_date)}</span>
           </div>
         )}
       </div>

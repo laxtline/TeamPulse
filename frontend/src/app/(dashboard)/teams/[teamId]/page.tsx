@@ -1,11 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { teamsApi, projectsApi } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { TeamCard } from '@/components/teams/TeamCard'
 import { MemberTable } from '@/components/teams/MemberTable'
 import { InviteModal } from '@/components/teams/InviteModal'
 import { CreateTeamModal } from '@/components/teams/CreateTeamModal'
@@ -19,48 +19,6 @@ import { getRoleColor } from '@/lib/utils'
 import { Team, TeamMember, Project } from '@/types'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 
-// Simple Tabs implementation
-function Tabs({ children, defaultValue, onValueChange }: any) {
-  const [value, setValue] = useState(defaultValue)
-  return (
-    <div>
-      {React.Children.map(children, (child) => {
-        if (child.type === TabsList) {
-          return React.cloneElement(child, { value, onValueChange: setValue })
-        }
-        if (child.type === TabsContent) {
-          return child.props.value === value ? child : null
-        }
-        return child
-      })}
-    </div>
-  )
-}
-
-function TabsList({ children, value, onValueChange }: any) {
-  return (
-    <div className="flex border-b border-border mb-4">
-      {React.Children.map(children, (child) => {
-        const isActive = child.props.value === value
-        return React.cloneElement(child, {
-          className: `px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            isActive ? 'border-primary-600 text-primary-600' : 'border-transparent text-surface-500 hover:text-surface-700'
-          }`,
-          onClick: () => onValueChange(child.props.value),
-        })
-      })}
-    </div>
-  )
-}
-
-function TabsContent({ children, value }: any) {
-  return <>{children}</>
-}
-
-function TabsTrigger({ children, value }: any) {
-  return <span>{children}</span>
-}
-
 export default function TeamDetailPage() {
   const params = useParams()
   const teamId = params.teamId as string
@@ -70,27 +28,35 @@ export default function TeamDetailPage() {
 
   const { data: team, isLoading } = useQuery({
     queryKey: ['teams', teamId],
-    queryFn: () => teamsApi.get(teamId),
+    // Links use the slug because it reads better in the address bar, but the
+    // API wants the team id, so look the team up first.
+    queryFn: async () => {
+      const teams = await teamsApi.list()
+      const match = teams.find((t) => t.id === teamId || t.slug === teamId)
+      if (!match) throw new Error('Team not found')
+      return teamsApi.get(match.id)
+    },
     enabled: !!teamId,
   })
 
   const updateMemberMutation = useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: string }) =>
-      teamsApi.updateMember(teamId, userId, { role }),
+      teamsApi.updateMember(team?.id ?? teamId, userId, { role }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teams', teamId] })
     },
   })
 
   const removeMemberMutation = useMutation({
-    mutationFn: (userId: string) => teamsApi.removeMember(teamId, userId),
+    mutationFn: (userId: string) => teamsApi.removeMember(team?.id ?? teamId, userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teams', teamId] })
     },
   })
 
   const inviteMutation = useMutation({
-    mutationFn: (data: { email: string; role: string }) => teamsApi.inviteMember(teamId, data),
+    mutationFn: (data: { email: string; role: string }) =>
+      teamsApi.inviteMember(team?.id ?? teamId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teams', teamId] })
       setIsInviteOpen(false)
@@ -233,7 +199,25 @@ export default function TeamDetailPage() {
         <TabsContent value="projects">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {team.projects?.map((project) => (
-              <TeamCard key={project.id} team={{ ...project, slug: project.key_prefix.toLowerCase() }} userRole="member" />
+              <Link key={project.id} href={`/teams/${team.id}/projects/${project.id}`}>
+                <Card className="h-full hover:border-primary-400 transition-colors">
+                  <CardContent className="p-6 space-y-2">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+                        <FolderKanban className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{project.name}</p>
+                        <p className="text-sm text-surface-500">{project.key_prefix}</p>
+                      </div>
+                    </div>
+                    {project.description && (
+                      <p className="text-sm text-surface-500 line-clamp-2">{project.description}</p>
+                    )}
+                    <Badge variant="secondary">{project.task_count || 0} tasks</Badge>
+                  </CardContent>
+                </Card>
+              </Link>
             ))}
           </div>
         </TabsContent>
