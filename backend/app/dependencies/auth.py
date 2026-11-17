@@ -14,6 +14,13 @@ async def get_current_user(
     access_token: Optional[str] = Cookie(None, alias="access_token"),
     db: AsyncSession = Depends(get_db)
 ) -> User:
+    # OAuth logins keep their tokens inside the NextAuth session, so also accept
+    # a normal Authorization header. Cookie still wins when both are present.
+    if not access_token:
+        header = request.headers.get("Authorization", "")
+        if header.lower().startswith("bearer "):
+            access_token = header[7:].strip()
+
     if not access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

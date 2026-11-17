@@ -15,6 +15,25 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class UpdateProfileRequest(BaseModel):
+    full_name: str = Field(min_length=1, max_length=255)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=100)
+
+
+class OAuthLoginRequest(BaseModel):
+    """Profile handed over by NextAuth after the provider login completes."""
+
+    provider: str
+    provider_user_id: str
+    email: EmailStr
+    full_name: str = Field(min_length=1, max_length=255)
+    avatar_url: Optional[str] = None
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str

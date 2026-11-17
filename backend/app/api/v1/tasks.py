@@ -64,7 +64,28 @@ async def get_task(
     if str(task.project_id) != str(project_id):
         raise HTTPException(status_code=404, detail="Task not found in this project")
 
-    from app.schemas.task import UserBrief, CommentResponse, ActivityResponse, AIPriorityResponse
+    return _task_detail(task)
+
+
+# The task page only knows the task id, so expose a flat lookup as well.
+direct_router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+@direct_router.get("/{task_id}", response_model=TaskDetailResponse)
+async def get_task_by_id(
+    task_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    service = TaskService(db)
+    task = await service.get_task(task_id, current_user.id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return _task_detail(task)
+
+
+def _task_detail(task) -> TaskDetailResponse:
+    from app.schemas.task import UserBrief, CommentResponse, ActivityResponse
 
     assignee = None
     if task.assignee:

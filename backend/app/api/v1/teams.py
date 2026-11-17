@@ -58,7 +58,29 @@ async def get_team(team_id: uuid.UUID, current_user: User = Depends(get_current_
         ))
 
     from app.schemas.team import ProjectBrief
-    projects = [ProjectBrief(id=p.id, name=p.name, key_prefix=p.key_prefix) for p in team.projects]
+    from app.models.project import Task
+    from sqlalchemy import func
+
+    # One query for all the project task counts instead of one per project.
+    counts = {}
+    if team.projects:
+        count_rows = await db.execute(
+            select(Task.project_id, func.count(Task.id))
+            .where(Task.project_id.in_([p.id for p in team.projects]))
+            .group_by(Task.project_id)
+        )
+        counts = {project_id: total for project_id, total in count_rows.all()}
+
+    projects = [
+        ProjectBrief(
+            id=p.id,
+            name=p.name,
+            description=p.description,
+            key_prefix=p.key_prefix,
+            task_count=counts.get(p.id, 0),
+        )
+        for p in team.projects
+    ]
 
     return TeamDetailResponse(
         id=team.id,

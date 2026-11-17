@@ -132,14 +132,11 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-async def authenticate_websocket(websocket: WebSocket, token: str) -> tuple[uuid.UUID, uuid.UUID, str]:
+async def authenticate_websocket(websocket: WebSocket, token: str) -> tuple[uuid.UUID, str]:
     try:
         payload = verify_access_token(token)
         user_id = uuid.UUID(payload["sub"])
-        team_id = uuid.UUID(payload["team_id"]) if payload.get("team_id") else None
-        user_name = payload.get("full_name", "Unknown")
-        if not team_id:
-            raise ValidationError("Team ID required in token")
-        return user_id, team_id, user_name
+        user_name = payload.get("full_name") or "Unknown"
+        return user_id, user_name
     except Exception as e:
         raise ValidationError(f"Invalid token: {str(e)}")

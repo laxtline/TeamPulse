@@ -63,15 +63,20 @@ class AuthService:
         user_id = uuid.UUID(payload["sub"])
 
         result = await self.db.execute(
-            select(RefreshToken).where(
+            select(RefreshToken)
+            .where(
                 RefreshToken.user_id == user_id,
                 RefreshToken.revoked == False,
                 RefreshToken.expires_at > datetime.now(timezone.utc)
             )
+            .order_by(RefreshToken.expires_at.desc())
+            .limit(1)
         )
-        stored = result.scalar_one_or_none()
+        stored = result.scalars().first()
 
-        if not stored or not verify_password(refresh_token, stored.token_hash):
+        # Tokens are stored as a sha256 hash, so compare hashes directly.
+        incoming_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+        if not stored or not secrets.compare_digest(incoming_hash, stored.token_hash):
             raise ValidationError("Invalid or expired refresh token")
 
         stored.revoked = True
@@ -213,7 +218,7 @@ class AuthService:
             expires_at=expires_at,
         )
         self.db.add(token)
-        await self.db.flush()
+        await self.db.commit()
 
     async def cleanup_expired_tokens(self):
         await self.db.execute(

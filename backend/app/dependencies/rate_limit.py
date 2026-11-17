@@ -1,5 +1,4 @@
 from fastapi import Request, HTTPException, Depends, status
-from functools import wraps
 import time
 from collections import defaultdict
 from threading import Lock
@@ -56,10 +55,11 @@ async def rate_limit_dependency(
 
 
 def rate_limit(max_requests: int, window_seconds: int, key_prefix: str = "api"):
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(request: Request, *args, **kwargs):
-            await rate_limit_dependency(request, max_requests, window_seconds, key_prefix)
-            return await func(request, *args, **kwargs)
-        return wrapper
-    return decorator
+    """Build a route dependency that enforces a rate limit.
+
+    Usage: ``@router.post("/path", dependencies=[rate_limit(5, 60, "auth")])``.
+    """
+    async def dependency(request: Request):
+        await rate_limit_dependency(request, max_requests, window_seconds, key_prefix)
+
+    return Depends(dependency)

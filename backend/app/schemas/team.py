@@ -58,6 +58,7 @@ class TeamDetailResponse(TeamResponse):
 class ProjectBrief(BaseModel):
     id: uuid.UUID
     name: str
+    description: Optional[str] = None
     key_prefix: str
     task_count: int = 0
 
