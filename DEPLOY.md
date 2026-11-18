@@ -13,6 +13,26 @@ only; it can't run FastAPI, Postgres or Redis. The split is:
 
 Both Vercel and Render build straight from GitHub, so `git push` redeploys.
 
+## The live deployment
+
+| Piece | Host | URL |
+|---|---|---|
+| Frontend | Vercel | https://team-pulse-lilac.vercel.app |
+| API | Render (`teampulse-api`) | https://teampulse-api-ep2v.onrender.com |
+| AI service | Render (`teampulse-ai`) | https://teampulse-ai-trwr.onrender.com |
+| Postgres | Neon (`teampulse`, `production`) | direct host, `ap-southeast-1` |
+| Redis | Upstash (`teampulse-redis`) | TLS, `ap-southeast-1` |
+
+Demo login: `arjun@teampulse.ac` / `Passcode@9938` (the other three seeded
+accounts use the same password). Health checks:
+
+```
+GET https://teampulse-api-ep2v.onrender.com/health        # liveness
+GET https://teampulse-api-ep2v.onrender.com/health/ready  # DB + Redis, 503 when down
+GET https://teampulse-ai-trwr.onrender.com/health
+```
+
+
 ---
 
 # Option A — the free stack (no credit card)
@@ -73,8 +93,8 @@ REDIS_URL=redis://red-cxxxxx:6379
 SECRET_KEY=<run: openssl rand -hex 32>
 ENVIRONMENT=production
 DEBUG=false
-FRONTEND_URL=https://teampulse.vercel.app
-CORS_ORIGINS=["https://teampulse.vercel.app"]
+FRONTEND_URL=https://team-pulse-lilac.vercel.app
+CORS_ORIGINS=["https://team-pulse-lilac.vercel.app"]
 GOOGLE_CLIENT_ID=<same as local>
 GOOGLE_CLIENT_SECRET=<same as local>
 GITHUB_CLIENT_ID=<same as local>
@@ -89,7 +109,7 @@ the `+asyncpg` driver and turns `sslmode=require` into what asyncpg wants, so
 paste it unchanged.
 
 4. **Create Web Service**. The first build takes a few minutes. When it's done,
-   open `https://teampulse-api.onrender.com/health` — it should return
+   open `https://teampulse-api-ep2v.onrender.com/health` — it should return
    `{"status":"ok", ...}`.
 
 ## 4. Seed the demo data
@@ -111,7 +131,7 @@ tasks. It creates the tables first, so you don't need to do anything else.
 Check it worked:
 
 ```bash
-curl -X POST https://teampulse-api.onrender.com/api/v1/auth/login \
+curl -X POST https://teampulse-api-ep2v.onrender.com/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"arjun@teampulse.ac","password":"Passcode@9938"}'
 ```
@@ -123,10 +143,10 @@ curl -X POST https://teampulse-api.onrender.com/api/v1/auth/login \
 3. **Environment Variables**:
 
 ```
-NEXT_PUBLIC_API_URL=https://teampulse-api.onrender.com
-NEXT_PUBLIC_WS_URL=wss://teampulse-api.onrender.com
-BACKEND_INTERNAL_URL=https://teampulse-api.onrender.com
-NEXTAUTH_URL=https://teampulse.vercel.app
+NEXT_PUBLIC_API_URL=https://teampulse-api-ep2v.onrender.com
+NEXT_PUBLIC_WS_URL=wss://teampulse-api-ep2v.onrender.com
+BACKEND_INTERNAL_URL=https://teampulse-api-ep2v.onrender.com
+NEXTAUTH_URL=https://team-pulse-lilac.vercel.app
 NEXTAUTH_SECRET=<run: openssl rand -hex 32>
 GOOGLE_CLIENT_ID=<same as local>
 GOOGLE_CLIENT_SECRET=<same as local>
@@ -146,15 +166,15 @@ still works.
 OAuth client:
 
 ```
-Authorized JavaScript origins: https://teampulse.vercel.app
-Authorized redirect URIs:    https://teampulse.vercel.app/api/auth/callback/google
+Authorized JavaScript origins: https://team-pulse-lilac.vercel.app
+Authorized redirect URIs:    https://team-pulse-lilac.vercel.app/api/auth/callback/google
 ```
 
 **GitHub** — github.com/settings/developers → your OAuth app:
 
 ```
-Homepage URL:               https://teampulse.vercel.app
-Authorization callback URL: https://teampulse.vercel.app/api/auth/callback/github
+Homepage URL:               https://team-pulse-lilac.vercel.app
+Authorization callback URL: https://team-pulse-lilac.vercel.app/api/auth/callback/github
 ```
 
 The Google app is in *Testing* mode, so add your Gmail under **OAuth consent
@@ -168,7 +188,7 @@ about a minute, which looks bad if someone opens the link cold.
 Two options:
 
 - **Free pinger** — [cron-job.org](https://cron-job.org) or UptimeRobot, hit
-  `https://teampulse-api.onrender.com/health` every 10 minutes. Render gives
+  `https://teampulse-api-ep2v.onrender.com/health` every 10 minutes. Render gives
   750 instance hours a month, and one always-on service uses about 730, so it
   fits exactly. Don't also keep the AI service warm or you'll go over.
 - **Just warm it up** — open the site 2 minutes before an interview. The
@@ -211,8 +231,8 @@ REDIS_URL=${{Redis.REDIS_URL}}
 SECRET_KEY=<openssl rand -hex 32>
 ENVIRONMENT=production
 DEBUG=false
-FRONTEND_URL=https://teampulse.vercel.app
-CORS_ORIGINS=["https://teampulse.vercel.app"]
+FRONTEND_URL=https://team-pulse-lilac.vercel.app
+CORS_ORIGINS=["https://team-pulse-lilac.vercel.app"]
 ```
 
 5. **Settings → Networking → Generate Domain**.
