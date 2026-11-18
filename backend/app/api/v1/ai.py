@@ -71,18 +71,20 @@ async def get_my_standup(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    from app.models.activity import Activity
+    from app.models.comment import Activity
     from sqlalchemy import select
 
     activity_service = ActivityService(db)
-    activities = await activity_service.get_task_activities(current_user.id, limit=50)
+    activities = await activity_service.get_user_activities(current_user.id, limit=50)
 
     formatted_activities = []
     for a in activities:
+        new_value = a.new_value or {}
+        old_value = a.old_value or {}
         formatted_activities.append({
             "action": a.action,
-            "task_title": a.new_value.get("title") if a.new_value else a.old_value.get("title") if a.old_value else "Unknown",
-            "task_status": a.new_value.get("status") if a.new_value else "unknown",
+            "task_title": new_value.get("title") or old_value.get("title") or "Unknown",
+            "task_status": new_value.get("status") or old_value.get("status") or "unknown",
             "timestamp": a.created_at.strftime("%H:%M"),
             "user_name": a.user.full_name if a.user else "Unknown"
         })

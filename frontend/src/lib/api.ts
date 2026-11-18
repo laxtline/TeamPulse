@@ -180,7 +180,8 @@ export const aiApi = {
     assignee_workload: number
     project_velocity: number
   }) => payload<AIPriority>(api.post('/ai/task-priority', data)),
-  myStandup: (date: string) => payload<StandupSummary>(api.post('/ai/my-standup', { date })),
+  myStandup: (date: string) =>
+    payload<StandupSummary>(api.post('/ai/my-standup', null, { params: { date } })),
   projectInsights: (projectId: string) =>
     payload<Record<string, unknown>>(api.get(`/ai/insights/${projectId}`)),
 }

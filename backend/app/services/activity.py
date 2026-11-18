@@ -40,3 +40,16 @@ class ActivityService:
         )
         result = await self.db.execute(query)
         return list(result.scalars().all())
+
+    async def get_user_activities(self, user_id: uuid.UUID, limit: int = 50) -> list[Activity]:
+        from sqlalchemy import select
+        from sqlalchemy.orm import joinedload
+        query = (
+            select(Activity)
+            .where(Activity.user_id == user_id)
+            .options(joinedload(Activity.user))
+            .order_by(Activity.created_at.desc())
+            .limit(limit)
+        )
+        result = await self.db.execute(query)
+        return list(result.scalars().all())

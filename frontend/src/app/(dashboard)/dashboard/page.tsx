@@ -3,7 +3,7 @@
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { teamsApi, tasksApi, aiApi } from '@/lib/api'
+import { teamsApi, projectsApi, tasksApi, aiApi } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -30,7 +30,12 @@ export default function DashboardPage() {
       if (!teams) return []
       const allTasks: Task[] = []
       for (const team of teams) {
-        for (const project of team.projects || []) {
+        // The teams list endpoint only returns the team itself, not its
+        // projects, so fetch them when they are missing.
+        const projects = team.projects?.length
+          ? team.projects
+          : await projectsApi.list(team.id)
+        for (const project of projects) {
           const tasks = await tasksApi.list(project.id, { assignee_id: session?.user?.id })
           allTasks.push(...tasks)
         }
