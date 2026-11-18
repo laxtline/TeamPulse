@@ -10,7 +10,7 @@ settings = get_settings()
 class AIService:
     def __init__(self):
         self.base_url = settings.AI_SERVICE_URL
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.client = httpx.AsyncClient(timeout=60.0)
 
     async def close(self):
         await self.client.aclose()

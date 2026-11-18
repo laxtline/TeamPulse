@@ -44,18 +44,30 @@ PRIORITIES:
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.3,
-            max_tokens=300
+            max_tokens=800
         )
 
-        content = response.choices[0].message.content
+        content = (response.choices[0].message.content or "").replace("**", "")
         summary = ""
         priorities = []
 
-        for line in content.split("\n"):
-            if line.startswith("SUMMARY:"):
-                summary = line.replace("SUMMARY:", "").strip()
-            elif line.strip().startswith(("1.", "2.", "3.")):
-                priorities.append(line.strip()[3:].strip())
+        for raw_line in content.split("\n"):
+            line = raw_line.strip()
+            if line.upper().startswith("SUMMARY:"):
+                summary = line.split(":", 1)[1].strip()
+            elif line[:2] in ("1.", "2.", "3.") or line[:2] in ("1)", "2)", "3)"):
+                priorities.append(line[2:].strip())
+            elif line.startswith(("- ", "* ")):
+                priorities.append(line[2:].strip())
+
+        # Reasoning models sometimes ignore the requested labels, so fall back to
+        # the first meaningful line instead of returning the canned summary.
+        if not summary and content.strip():
+            for raw_line in content.split("\n"):
+                line = raw_line.strip()
+                if line and not line.upper().startswith("PRIORITIES:"):
+                    summary = line
+                    break
 
         if not summary:
             summary = "Completed tasks and moved items forward. No blockers."
@@ -117,24 +129,26 @@ ACTION: <Do now | Schedule this week | Delegate | Defer>"""
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.3,
-            max_tokens=200
+            max_tokens=600
         )
 
-        content = response.choices[0].message.content
+        content = (response.choices[0].message.content or "").replace("**", "")
         score = 5
         reasoning = "AI scoring failed, using fallback"
         action = "Schedule this week"
 
-        for line in content.split("\n"):
-            if line.startswith("SCORE:"):
+        for raw_line in content.split("\n"):
+            line = raw_line.strip()
+            upper = line.upper()
+            if upper.startswith("SCORE:"):
                 try:
-                    score = int(line.replace("SCORE:", "").strip())
+                    score = int(line.split(":", 1)[1].strip().split()[0])
                 except Exception:
                     pass
-            elif line.startswith("REASONING:"):
-                reasoning = line.replace("REASONING:", "").strip()
-            elif line.startswith("ACTION:"):
-                action = line.replace("ACTION:", "").strip()
+            elif upper.startswith("REASONING:"):
+                reasoning = line.split(":", 1)[1].strip()
+            elif upper.startswith("ACTION:"):
+                action = line.split(":", 1)[1].strip()
 
         score = max(1, min(10, score))
         valid_actions = ["Do now", "Schedule this week", "Delegate", "Defer"]
