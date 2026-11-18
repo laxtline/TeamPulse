@@ -1,27 +1,65 @@
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import get_settings
 
 settings = get_settings()
 
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres", "db", "host.docker.internal", "redis"}
+
 
 def database_url() -> str:
-    """Hosting providers give out a plain postgresql:// url, but sqlalchemy
-    needs the asyncpg driver spelled out. asyncpg also wants ssl=require
-    instead of the libpq style sslmode=require."""
+    """Turn whatever the database provider gives us into an asyncpg URL.
+
+    Hosting providers hand out a libpq style url:
+      postgresql://user:pass@host/db?sslmode=require&channel_binding=require
+    SQLAlchemy needs the asyncpg driver spelled out, asyncpg wants ssl=require
+    instead of sslmode=require, and it raises on libpq-only options such as
+    channel_binding, so those are translated/stripped here.
+    """
     url = settings.DATABASE_URL
-    if url.startswith("postgresql://"):
-        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
-    url = url.replace("sslmode=require", "ssl=require")
-    return url
+    if not url:
+        return url
+
+    for prefix in ("postgres://", "postgresql://", "postgresql+psycopg2://", "postgresql+psycopg://"):
+        if url.startswith(prefix):
+            url = "postgresql+asyncpg://" + url[len(prefix):]
+            break
+
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+
+    ssl_mode = query.pop("sslmode", None)
+    query.pop("channel_binding", None)  # libpq only, asyncpg rejects it
+    query.pop("pgbouncer", None)
+
+    host = (parts.hostname or "").lower()
+    is_local = host in LOCAL_HOSTS
+
+    if "ssl" not in query and ssl_mode not in {"disable", "allow"}:
+        if ssl_mode in {"require", "prefer"}:
+            query["ssl"] = "require"
+        elif ssl_mode in {"verify-ca", "verify-full"}:
+            query["ssl"] = ssl_mode
+        elif not is_local:
+            query["ssl"] = "require"
+
+    # Neon's PgBouncer pooler runs in transaction mode, which breaks asyncpg's
+    # prepared statement cache, so disable the cache when the pooler is used.
+    if "-pooler" in host:
+        query.setdefault("statement_cache_size", "0")
+
+    return urlunsplit(parts._replace(query=urlencode(query)))
 
 
 engine = create_async_engine(
     database_url(),
-    echo=settings.DEBUG,
+    echo=settings.debug_enabled,
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    pool_recycle=300,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
 )
 
 async_session_maker = async_sessionmaker(
@@ -47,6 +85,17 @@ async def get_db() -> AsyncSession:
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+async def ping_db() -> bool:
+    from sqlalchemy import text
+
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
 
 
 async def close_db():

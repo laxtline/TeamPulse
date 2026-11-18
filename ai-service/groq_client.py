@@ -1,4 +1,5 @@
 import os
+from types import SimpleNamespace
 import httpx
 from typing import Optional
 from pydantic_settings import BaseSettings
@@ -50,7 +51,18 @@ class GroqClient:
             json=payload
         )
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+
+        # The endpoints read `response.choices[0].message.content`, so expose the
+        # Groq payload in that attribute style instead of a plain dict.
+        try:
+            content = data["choices"][0]["message"]["content"] or ""
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError("Unexpected Groq response shape") from exc
+
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+        )
 
     async def close(self):
         await self.client.aclose()
