@@ -67,6 +67,36 @@ cp .env.example .env
 docker compose up --build
 ```
 
+## Demo Credentials
+
+After running `docker compose up --build` and seeding the database (see below), you can log in with these pre-created accounts:
+
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | `admin@teampulse.ac` | `Passcode@9938` |
+| Member | `arjun@teampulse.ac` | `Passcode@9938` |
+| Member | `priya@teampulse.ac` | `Passcode@9938` |
+| Member | `rohan@teampulse.ac` | `Passcode@9938` |
+
+All four accounts use the same password: **`Passcode@9938`**
+
+### Seeding Demo Data
+
+The demo accounts, sample team, projects, and tasks are created by the seed script. After the containers are running:
+
+```bash
+# From the project root
+docker compose run --rm --no-deps backend python scripts/seed.py
+```
+
+This creates:
+- 4 users (1 admin + 3 members)
+- 1 team: "Acme Corp"
+- 3 projects with Kanban boards
+- 26 sample tasks across different statuses
+
+You can then log in at **http://localhost:3000** with any of the credentials above.
+
 | Service | URL |
 |---|---|
 | Frontend | http://localhost:3000 |
