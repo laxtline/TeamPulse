@@ -1,0 +1,393 @@
+================================================================================
+TEAMPULSE - SETUP GUIDE (FROM ZERO TO RUNNING)
+================================================================================
+Last updated: 18 November 2026
+Target machine: Windows 10/11 with PowerShell. Linux/macOS notes are inline.
+
+This guide assumes you have never run this project. Follow the sections in order.
+Each section ends with a "you should see" check. If the check fails, stop and fix
+it before moving on - that is much faster than debugging five layers at once.
+
+--------------------------------------------------------------------------------
+0. WHAT YOU ARE SETTING UP
+--------------------------------------------------------------------------------
+  Three processes:
+    1. frontend    Next.js 14 on http://localhost:3000
+    2. backend     FastAPI on http://localhost:8000
+    3. ai-service  FastAPI on http://localhost:8001
+
+  Two data services:
+    4. PostgreSQL 16 on port 5432
+    5. Redis 7 on port 6379
+
+  You have two ways to get 4 and 5: Docker (recommended) or native installs.
+
+--------------------------------------------------------------------------------
+1. INSTALL THE TOOLS
+--------------------------------------------------------------------------------
+1.1 Git
+    Download: https://git-scm.com/download/win
+    Check:
+      git --version
+
+1.2 Python 3.11 or 3.12 (NOT 3.13 - some pinned wheels lag behind)
+    Download: https://www.python.org/downloads/
+    During install, tick "Add python.exe to PATH".
+    Check:
+      python --version
+      pip --version
+
+1.3 Node.js 18 LTS or 20 LTS (not 21+ if you want zero surprises)
+    Download: https://nodejs.org/
+    Check:
+      node --version
+      npm --version
+
+1.4 Docker Desktop (easiest route for Postgres + Redis)
+    Download: https://www.docker.com/products/docker-desktop/
+    Start Docker Desktop and wait until it says "Engine running".
+    Check:
+      docker --version
+      docker compose version
+
+    No Docker? Install PostgreSQL 16 and Redis manually:
+      - Postgres: https://www.postgresql.org/download/windows/
+        Remember the superuser password you set.
+      - Redis on Windows is unofficial; use Memurai, or WSL2, or just run
+        Docker. The backend can start without Redis in development, but rate
+        limiting and pub/sub features degrade.
+
+1.5 An editor: VS Code with the Python, ESLint, Tailwind, and Docker extensions.
+
+1.6 Optional: a PostgreSQL GUI (pgAdmin comes with the installer, or DBeaver).
+
+--------------------------------------------------------------------------------
+2. GET THE CODE
+--------------------------------------------------------------------------------
+  git clone https://github.com/laxtline/TeamPulse.git
+  cd TeamPulse\teampulse
+
+  Important: the git repository is the "teampulse" folder. If you run
+  "git status" in the parent and get "not a git repository", you are one level
+  too high.
+
+  You should see these folders inside teampulse:
+    backend\  frontend\  ai-service\  docs\  docker-compose.yml  README.md
+
+--------------------------------------------------------------------------------
+3. START THE DATABASE AND REDIS
+--------------------------------------------------------------------------------
+  Choose ONE option.
+
+  Option A - Docker (recommended)
+  3A.1 From teampulse\ run:
+         docker compose up -d postgres redis
+       (If the compose file defines the services with different names, run
+        "docker compose config --services" first to see them.)
+  3A.2 Check:
+         docker ps
+       You should see a postgres container and a redis container, both "Up".
+
+  Option B - native Postgres
+  3B.1 Open psql or pgAdmin and create the database:
+         CREATE DATABASE teampulse;
+  3B.2 Confirm your local connection string:
+         postgresql+asyncpg://postgres:YOURPASSWORD@localhost:5432/teampulse
+  3B.3 Redis: skip it if you cannot install it. Note in your .env that Redis is
+       absent, and expect rate-limit warnings in the log.
+
+  You should see: a reachable Postgres on port 5432.
+
+--------------------------------------------------------------------------------
+4. CONFIGURE THE BACKEND ENVIRONMENT
+--------------------------------------------------------------------------------
+4.1 Create the env file from the template:
+      copy backend\.env.example backend\.env
+    (Linux/macOS: cp backend/.env.example backend/.env)
+
+4.2 Open backend\.env and set these. Values below are safe LOCAL defaults:
+
+      ENVIRONMENT=development
+      DEBUG=true
+      SECRET_KEY=dev-only-change-me-please-32-chars-min
+      ALGORITHM=HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES=15
+      REFRESH_TOKEN_EXPIRE_DAYS=7
+
+      DATABASE_URL=postgresql+asyncpg://postgres:YOURPASSWORD@localhost:5432/teampulse
+      REDIS_URL=redis://localhost:6379/0
+
+      AI_SERVICE_URL=http://localhost:8001
+      CORS_ORIGINS=http://localhost:3000
+      FRONTEND_URL=http://localhost:3000
+
+      GOOGLE_CLIENT_ID=
+      GOOGLE_CLIENT_SECRET=
+      GITHUB_CLIENT_ID=
+      GITHUB_CLIENT_SECRET=
+
+4.3 Gotchas:
+      - Keep the "+asyncpg" in DATABASE_URL. Plain "postgresql://" will fail
+        because the app uses the async driver.
+      - If your password contains @ or #, URL-encode it (@ becomes %40).
+      - No quotes around values. No trailing spaces.
+      - OAuth can stay empty; email + password login works without it.
+
+  You should see: backend\.env exists and is NOT shown as a change in
+  git status (it is gitignored).
+
+--------------------------------------------------------------------------------
+5. SET UP AND RUN THE BACKEND
+--------------------------------------------------------------------------------
+5.1 Create a virtual environment inside backend\:
+      cd backend
+      python -m venv .venv
+
+5.2 Activate it (PowerShell):
+      .\.venv\Scripts\Activate.ps1
+
+    If PowerShell blocks the script with an execution-policy error, run once:
+      Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+    then activate again. (cmd: .\.venv\Scripts\activate.bat
+    Linux/macOS: source .venv/bin/activate)
+
+5.3 Install dependencies:
+      pip install --upgrade pip
+      pip install -r requirements.txt
+
+5.4 Create the tables with Alembic:
+      alembic upgrade head
+
+    Expected: a few "Running upgrade ..." lines ending in "Done".
+    If it says "Target database is not up to date" or cannot connect, your
+    DATABASE_URL is wrong - fix it before continuing.
+
+5.5 Load the demo data:
+      python scripts\seed.py
+
+    Expected: lines reporting created users, the team, 3 projects and 26 tasks.
+    Running it twice may create duplicates depending on its guards; if the
+    script errors on unique constraints, the data is already there.
+
+5.6 Start the API:
+      uvicorn app.main:app --reload --port 8000
+
+    You should see:
+      INFO:     Uvicorn running on http://127.0.0.1:8000
+      INFO:     Application startup complete.
+
+5.7 Verify in a browser:
+      http://localhost:8000/health     -> JSON status ok
+      http://localhost:8000/docs       -> Swagger UI with all routes
+
+    If /docs loads but /health fails, the database connection is the suspect.
+
+--------------------------------------------------------------------------------
+6. SET UP AND RUN THE AI SERVICE
+--------------------------------------------------------------------------------
+6.1 Open a second terminal:
+      cd teampulse\ai-service
+      python -m venv .venv
+      .\.venv\Scripts\Activate.ps1
+      pip install -r requirements.txt
+
+6.2 Create its env file:
+      copy .env.example .env
+
+6.3 Set:
+      GROQ_API_KEY=            (leave empty to use the local fallback)
+      GROQ_MODEL=llama-3.3-70b-versatile
+      ALLOWED_ORIGINS=http://localhost:3000
+      PORT=8001
+      REQUEST_TIMEOUT_SECONDS=20
+
+    With no key the service still answers, using heuristic scoring. That is
+    intentional, so the demo never breaks.
+
+6.4 Start it:
+      uvicorn main:app --reload --port 8001
+
+    (If the module is not called main, check the folder - adjust to the real
+    filename.)
+
+  You should see: http://localhost:8001/health returns 200, and /docs loads.
+
+--------------------------------------------------------------------------------
+7. CONFIGURE AND RUN THE FRONTEND
+--------------------------------------------------------------------------------
+7.1 Create the env file:
+      cd ..\frontend
+      copy .env.local.example .env.local
+
+    If the example file is missing, create .env.local manually with:
+      NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      NEXT_PUBLIC_WS_URL=ws://localhost:8000/api/v1
+      NEXT_PUBLIC_APP_URL=http://localhost:3000
+      NEXTAUTH_URL=http://localhost:3000
+      NEXTAUTH_SECRET=dev-secret-change-me
+      GOOGLE_CLIENT_ID=
+      GOOGLE_CLIENT_SECRET=
+      GITHUB_CLIENT_ID=
+      GITHUB_CLIENT_SECRET=
+
+7.2 Install:
+      npm install
+
+7.3 Run:
+      npm run dev
+
+  You should see: "ready - started server on 0.0.0.0:3000" and
+  http://localhost:3000 loads the landing page.
+
+7.4 Log in with a seeded account:
+      arjun@teampulse.ac / Passcode@9938
+    (also priya@, rohan@, admin@ with the same password)
+
+  If you are bounced back to /login, the API URL is wrong or the backend is
+  not running. Open DevTools > Network and look at the failing request.
+
+--------------------------------------------------------------------------------
+8. THE ONE-COMMAND OPTION (DOCKER COMPOSE)
+--------------------------------------------------------------------------------
+  If Docker works, you can skip sections 3-7:
+    cd teampulse
+    docker compose up --build
+
+  Then wait for all five services to report healthy:
+    frontend   http://localhost:3000
+    backend    http://localhost:8000/docs
+    ai-service http://localhost:8001/docs
+    postgres   localhost:5432
+    redis      localhost:6379
+
+  Still run migrations and seed once inside the backend container:
+    docker compose exec backend alembic upgrade head
+    docker compose exec backend python scripts/seed.py
+
+  Stop: Ctrl+C, then "docker compose down". Add -v only if you want to wipe the
+  database volume.
+
+  Trade-off: Compose is faster to start, but slower to iterate because you
+  rebuild images. Most people develop backend+frontend natively and keep only
+  Postgres+Redis in Docker.
+
+--------------------------------------------------------------------------------
+9. RUNNING TWO SERVICES ONLY (LIGHTEST SETUP)
+--------------------------------------------------------------------------------
+  If you just want to see the UI and do not care about AI:
+    - Docker: postgres + redis only
+    - backend: uvicorn
+    - frontend: npm run dev
+    - skip ai-service: the backend returns a heuristic fallback when the AI
+      service is unreachable, so priority scores still appear.
+
+--------------------------------------------------------------------------------
+10. TESTS AND QUALITY CHECKS
+--------------------------------------------------------------------------------
+  Frontend:
+    cd frontend
+    npm run lint
+    npm test            (vitest unit tests)
+    npm run test:e2e    (Playwright; first run needs: npx playwright install)
+
+  Backend:
+    The tests folders exist but are EMPTY. There is nothing to run yet. If you
+    add tests, a typical run is:
+      pip install pytest pytest-asyncio httpx
+      pytest
+
+  Note: no CI workflow exists, so none of this runs automatically on push.
+
+--------------------------------------------------------------------------------
+11. PORT AND SERVICE MAP
+--------------------------------------------------------------------------------
+  Service     Port   URL
+  --------------------------------------------------------------------------
+  Frontend    3000   http://localhost:3000
+  Backend     8000   http://localhost:8000  (docs at /docs)
+  AI service  8001   http://localhost:8001  (docs at /docs)
+  PostgreSQL  5432   postgresql://localhost:5432
+  Redis       6379   redis://localhost:6379
+
+  If a port is taken on Windows:
+    netstat -ano | findstr :8000
+    taskkill /PID <pid> /F
+  Or just run on another port and update the URL in the other service's env.
+
+--------------------------------------------------------------------------------
+12. COMMON SETUP ERRORS
+--------------------------------------------------------------------------------
+  "uvicorn: command not found"
+    The virtualenv is not activated. Activate it and retry.
+
+  "sqlalchemy.exc.InvalidRequestError: The asyncio extension requires ..."
+    You installed sync drivers only. Reinstall requirements.txt inside the venv.
+
+  "asyncpg.exceptions.InvalidPasswordError"
+    Wrong password in DATABASE_URL, or the password was not URL-decoded.
+
+  "connection refused" on 5432
+    Postgres is not running. Start Docker Desktop or the Windows service.
+
+  "Cannot connect to Redis" warnings
+    Redis is not running. Everything except rate limiting still works.
+
+  "ModuleNotFoundError: No module named 'app'"
+    You started uvicorn from the wrong folder. It must run from backend\.
+
+  "next: command not found" / "npm ERR! missing script: dev"
+    You are not inside frontend\, or npm install did not finish.
+
+  "Hydration failed" in the browser console
+    Usually caused by a theme provider reading localStorage during SSR. It is
+    noisy but the app still works.
+
+  CORS error in the browser
+    CORS_ORIGINS in backend\.env must be exactly http://localhost:3000.
+
+  Login succeeds then immediately logs out
+    The refresh cookie/Bearer flow failed. Check the Network tab for the
+    /auth/refresh call and read the backend log.
+
+  "Today's Standup" card errors
+    Known bug in /api/v1/ai/my-standup. Not a setup problem. See
+    remaining-tasks.txt.
+
+--------------------------------------------------------------------------------
+13. A CLEAN RESTART (when everything is confused)
+--------------------------------------------------------------------------------
+  cd teampulse
+  docker compose down
+  docker compose up -d postgres redis
+
+  cd backend
+  .\.venv\Scripts\Activate.ps1
+  alembic downgrade base
+  alembic upgrade head
+  python scripts\seed.py
+  uvicorn app.main:app --reload --port 8000
+
+  cd ..\frontend
+  Remove-Item -Recurse -Force .next, node_modules
+  npm install
+  npm run dev
+
+  This deletes local build output and the local database contents. It does not
+  touch anything on GitHub or on a deployed server.
+
+--------------------------------------------------------------------------------
+14. SETUP CHECKLIST
+--------------------------------------------------------------------------------
+  [ ] git, python, node, docker installed and on PATH
+  [ ] repo cloned, you are inside teampulse\
+  [ ] Postgres and Redis running
+  [ ] backend\.env created with a valid DATABASE_URL
+  [ ] alembic upgrade head succeeded
+  [ ] seed script ran, 4 users exist
+  [ ] backend /docs loads
+  [ ] ai-service /docs loads
+  [ ] frontend\.env.local points at http://localhost:8000/api/v1
+  [ ] npm run dev loads the landing page
+  [ ] login with arjun@teampulse.ac works
+  [ ] kanban board shows tasks and drag works
+================================================================================

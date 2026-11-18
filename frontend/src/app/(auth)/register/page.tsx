@@ -117,6 +117,7 @@ export default function RegisterPage() {
               error={errors.password?.message}
               {...register('password')}
               leftIcon={<Lock className="h-4 w-4" />}
+              showToggle
             />
 
             <Button type="submit" className="w-full" loading={isLoading}>

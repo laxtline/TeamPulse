@@ -1,0 +1,394 @@
+================================================================================
+TEAMPULSE - FREE DEPLOYMENT GUIDE (STEP BY STEP)
+================================================================================
+Last updated: 18 November 2026
+Goal: put this project on the internet for Rs 0 / month using free tiers.
+
+This guide is written so a beginner can follow it top to bottom. Every step says
+what to click, what to paste, and how to check that it worked.
+
+--------------------------------------------------------------------------------
+0. THE FREE STACK WE USE
+--------------------------------------------------------------------------------
+  Frontend (Next.js) .... Vercel          free Hobby plan
+  Backend  (FastAPI) ..... Render          free Web Service
+  AI service (FastAPI) ... Render          free Web Service (2nd service)
+  Database (PostgreSQL) .. Neon            free tier
+  Redis .................. Upstash         free tier
+  Keep-alive pings ....... cron-job.org    free
+
+Why not everything on one provider? Because Render's free web service sleeps
+after inactivity, and Vercel does not run long-lived Python servers. Splitting
+is the normal free-tier pattern.
+
+Cost warning: all of the above are free, but they have limits (sleep, storage,
+monthly request counts). They are fine for a portfolio demo, not for real users.
+
+--------------------------------------------------------------------------------
+1. BEFORE YOU START - PREPARE THE REPO
+--------------------------------------------------------------------------------
+1.1 Push the code to GitHub.
+    The repository used in the docs is:
+      https://github.com/laxtline/TeamPulse
+    If you forked it, your URL is different - use yours everywhere below.
+
+1.2 Check that .gitignore excludes secrets. It must contain at least:
+      .env
+      .env.local
+      .env.*.local
+      __pycache__/
+      node_modules/
+      .next/
+      .venv/
+
+1.3 Verify nothing secret was ever committed:
+      git log --all --full-history -- .env
+    If that prints commits, rotate the keys before deploying.
+
+1.4 Create the three services locally first and confirm they run, because
+    debugging locally is far easier than debugging on a free tier.
+
+--------------------------------------------------------------------------------
+2. STEP 1 - CREATE THE DATABASE (NEON)
+--------------------------------------------------------------------------------
+2.1 Go to https://neon.tech and sign up with GitHub.
+2.2 Create a project:
+      Name    : teampulse
+      Region  : closest to you (for India, Singapore)
+      Postgres: 16
+2.3 Open "Connection Details" and copy the connection string. It looks like:
+      postgresql://USER:PASSWORD@ep-xxxx.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+2.4 Convert it to the driver the backend uses (asyncpg):
+      postgresql+asyncpg://USER:PASSWORD@ep-xxxx.ap-southeast-1.aws.neon.tech/neondb?ssl=require
+    Two changes only:
+      - "postgresql://" becomes "postgresql+asyncpg://"
+      - "?sslmode=require" becomes "?ssl=require"
+      (asyncpg does not understand sslmode.)
+2.5 Save this string. It becomes DATABASE_URL on Render later.
+2.6 Neon gives you a pooled and a direct host. For a free demo, the direct host
+    is fine. If you later see "too many connections", switch to the pooled host
+    (it usually contains "-pooler" in the hostname).
+
+--------------------------------------------------------------------------------
+3. STEP 2 - CREATE REDIS (UPSTASH)
+--------------------------------------------------------------------------------
+3.1 Go to https://upstash.com and sign up.
+3.2 Create a Redis database:
+      Name  : teampulse-redis
+      Type  : Regional
+      Region: same region as Neon if possible
+      TLS   : enabled (default)
+3.3 Open the database > "REST API" is NOT what we need. Open the "Connect" /
+    "Details" tab and copy the Redis URL. It looks like:
+      rediss://default:PASSWORD@xxxx.upstash.io:6379
+    Note "rediss" with two s = TLS. Keep it.
+3.4 Save it. This becomes REDIS_URL.
+
+--------------------------------------------------------------------------------
+4. STEP 3 - GET THE AI KEY (GROQ)
+--------------------------------------------------------------------------------
+4.1 Go to https://console.groq.com and sign up.
+4.2 Create an API key. It starts with "gsk_".
+4.3 Save it. This becomes GROQ_API_KEY.
+
+The AI service is written to work without this key: if the key is missing or the
+call fails, it falls back to local heuristics. So this step is optional for a
+demo, but the AI answers are nicer with it.
+
+--------------------------------------------------------------------------------
+5. STEP 4 - DEPLOY THE AI SERVICE ON RENDER
+--------------------------------------------------------------------------------
+Deploy this first because the backend calls it.
+
+5.1 Sign up at https://render.com with GitHub.
+5.2 New + > Web Service > connect your TeamPulse repo.
+5.3 Fill the form:
+      Name        : teampulse-ai
+      Region      : Singapore (or nearest)
+      Root Dir    : ai-service
+      Runtime     : Docker
+      Dockerfile  : Dockerfile.prod
+      Instance    : Free
+5.4 Environment variables (Environment tab):
+      GROQ_API_KEY   = gsk_...            (optional)
+      ALLOWED_ORIGINS= https://teampulse.vercel.app,http://localhost:3000
+      PORT           = 8001               (only if the Dockerfile expects it)
+5.5 Deploy. Wait for the log to show Uvicorn started.
+5.6 Copy the service URL, e.g.
+      https://teampulse-ai.onrender.com
+5.7 Test it in a browser:
+      https://teampulse-ai.onrender.com/health
+    Expect a JSON body with status "healthy" or similar.
+      https://teampulse-ai.onrender.com/docs
+    Expect the FastAPI Swagger page.
+
+Note: if the AI service is deployed as a Docker service, Render ignores a
+"Start Command" and uses the Dockerfile CMD. The production Dockerfile already
+exposes the right port, but confirm it in the logs.
+
+--------------------------------------------------------------------------------
+6. STEP 5 - DEPLOY THE BACKEND ON RENDER
+--------------------------------------------------------------------------------
+6.1 New + > Web Service > same repo again.
+6.2 Fill the form:
+      Name        : teampulse-api
+      Region      : Singapore
+      Root Dir    : backend
+      Runtime     : Python 3
+      Build Cmd   : pip install -r requirements.txt
+      Start Cmd   : uvicorn app.main:app --host 0.0.0.0 --port $PORT
+      Instance    : Free
+    (If you prefer Docker, set Runtime = Docker, Dockerfile = Dockerfile.prod.
+     Do not mix: pick one and stay with it.)
+6.3 Environment variables - this is the important part. Add each name with
+    your own value:
+
+      ENVIRONMENT            = production
+      DEBUG                  = false
+      SECRET_KEY             = <64 random chars>
+      DATABASE_URL           = postgresql+asyncpg://...   (from step 2.4)
+      REDIS_URL              = rediss://...               (from step 3.3)
+      AI_SERVICE_URL         = https://teampulse-ai.onrender.com
+      CORS_ORIGINS           = https://teampulse.vercel.app
+      FRONTEND_URL           = https://teampulse.vercel.app
+      ACCESS_TOKEN_EXPIRE_MINUTES = 15
+      REFRESH_TOKEN_EXPIRE_DAYS   = 7
+      GOOGLE_CLIENT_ID       = <from Google Cloud Console>   (optional)
+      GOOGLE_CLIENT_SECRET   = <...>                          (optional)
+      GITHUB_CLIENT_ID       = <from GitHub OAuth app>        (optional)
+      GITHUB_CLIENT_SECRET   = <...>                          (optional)
+
+    Rules:
+      - Never put quotes around values on Render unless the value itself has
+        spaces at the ends.
+      - CORS_ORIGINS must be the exact frontend origin, scheme included,
+        no trailing slash.
+      - If you use multiple origins, separate with commas: the backend splits
+        on commas.
+
+    Generate SECRET_KEY locally with:
+      python -c "import secrets; print(secrets.token_urlsafe(48))"
+    Do not reuse the development key from your local .env.
+
+6.4 Deploy and watch the log. A healthy start looks like:
+      INFO:     Application startup complete.
+      INFO:     Uvicorn running on http://0.0.0.0:10000
+    Render injects its own PORT, usually 10000. The $PORT in the Start Command
+    handles that; do not hardcode 8000 in production.
+
+6.5 Test:
+      https://teampulse-api.onrender.com/health
+      https://teampulse-api.onrender.com/docs
+    Then open the Swagger page and try POST /api/v1/auth/register once.
+
+--------------------------------------------------------------------------------
+7. STEP 6 - CREATE THE TABLES AND SEED DATA
+--------------------------------------------------------------------------------
+The backend does not create tables on its own in production; a fresh database is
+empty. Two options.
+
+Option A - run locally against the cloud database (easiest on Windows):
+  7A.1 In a local terminal, temporarily set DATABASE_URL to the Neon URL:
+         $env:DATABASE_URL="postgresql+asyncpg://...neon..."
+  7A.2 Apply the migration:
+         cd backend
+         alembic upgrade head
+  7A.3 Seed the demo data:
+         python scripts/seed.py
+  7A.4 Unset the variable when done:
+         Remove-Item Env:DATABASE_URL
+
+Option B - use the Render Shell (paid plans only on some tiers). If your plan
+has no shell, use Option A.
+
+After seeding, you should be able to log in with:
+      admin@teampulse.ac / Passcode@9938
+      arjun@teampulse.ac / Passcode@9938
+      priya@teampulse.ac / Passcode@9938
+      rohan@teampulse.ac / Passcode@9938
+
+WARNING: change or delete these demo accounts before sharing a public link. They
+are real rows in your production database with a known password.
+
+--------------------------------------------------------------------------------
+8. STEP 7 - DEPLOY THE FRONTEND ON VERCEL
+--------------------------------------------------------------------------------
+8.1 Sign up at https://vercel.com with GitHub.
+8.2 Add New > Project > import your repo.
+8.3 Configure:
+      Framework Preset : Next.js
+      Root Directory   : frontend
+      Build Command    : npm run build   (default)
+      Output Directory : .next          (default)
+      Install Command  : npm install    (default)
+      Node version     : 18.x or 20.x
+8.4 Environment variables:
+
+      NEXT_PUBLIC_API_URL          = https://teampulse-api.onrender.com/api/v1
+      NEXT_PUBLIC_WS_URL           = wss://teampulse-api.onrender.com/api/v1
+      NEXT_PUBLIC_APP_URL          = https://teampulse.vercel.app
+      NEXTAUTH_URL                 = https://teampulse.vercel.app
+      NEXTAUTH_SECRET              = <random string>
+      GOOGLE_CLIENT_ID             = <same as backend>   (optional)
+      GOOGLE_CLIENT_SECRET         = <same as backend>   (optional)
+      GITHUB_CLIENT_ID             = <same as backend>   (optional)
+      GITHUB_CLIENT_SECRET         = <same as backend>   (optional)
+
+    Three things people get wrong here:
+      - NEXT_PUBLIC_API_URL must end with /api/v1, because every frontend call
+        is relative to that prefix.
+      - NEXT_PUBLIC_WS_URL must use wss:// (secure socket), not ws://, because
+        the site is https. Mixed content is blocked by the browser.
+      - Changing any NEXT_PUBLIC_* variable requires a redeploy: they are baked
+        into the build, not read at runtime.
+
+8.5 Deploy, then open the URL Vercel gives you.
+8.6 If it 404s or shows a blank page, check the build log first, then the
+    browser console. See section 11.
+
+--------------------------------------------------------------------------------
+9. STEP 8 - CONNECT OAUTH (OPTIONAL)
+--------------------------------------------------------------------------------
+Google:
+  9.1 https://console.cloud.google.com > APIs & Services > Credentials
+  9.2 Create Credentials > OAuth client ID > Web application
+  9.3 Authorized JavaScript origins:
+        https://teampulse.vercel.app
+        http://localhost:3000
+  9.4 Authorized redirect URIs:
+        https://teampulse.vercel.app/api/auth/callback/google
+        http://localhost:3000/api/auth/callback/google
+  9.5 Copy the client id/secret into Vercel AND Render (both services use them
+      during the OAuth exchange).
+
+GitHub:
+  9.6 GitHub > Settings > Developer settings > OAuth Apps > New OAuth App
+  9.7 Homepage URL       : https://teampulse.vercel.app
+      Callback URL       : https://teampulse.vercel.app/api/auth/callback/github
+  9.8 Copy id/secret into Vercel and Render.
+
+If you skip OAuth entirely, email + password still works. The app does not
+crash when the OAuth variables are missing; the buttons just cannot complete a
+login.
+
+--------------------------------------------------------------------------------
+10. STEP 9 - STOP THE BACKEND FROM SLEEPING
+--------------------------------------------------------------------------------
+Render's free web service sleeps after about 15 minutes of no traffic. The first
+request afterwards takes 30-60 seconds.
+
+Cheap workaround: a free cron pinger.
+  10.1 Go to https://cron-job.org, create an account.
+  10.2 Create a cron job:
+         URL      : https://teampulse-api.onrender.com/health
+         Schedule : every 10 minutes
+  10.3 Create a second job for the AI service:
+         URL      : https://teampulse-ai.onrender.com/health
+         Schedule : every 10 minutes
+
+This keeps the processes warm inside the free monthly hours. Free hours are
+finite, so do not ping every minute.
+
+Also note: the database may scale to zero on Neon's free plan, so the very first
+query after idling can still be slightly slow.
+
+--------------------------------------------------------------------------------
+11. STEP 10 - REDEPLOY AFTER A CODE CHANGE
+--------------------------------------------------------------------------------
+Normal flow (recommended):
+  git add .
+  git commit -m "describe the change"
+  git push origin master
+
+  - Vercel redeploys automatically on push to the production branch.
+  - Render redeploys automatically too, unless you disabled auto-deploy.
+
+Manual:
+  - Vercel: Deployments > the latest > "..." > Redeploy. Tick "Clear build cache"
+    if a stale build is suspected.
+  - Render: service > Manual Deploy > "Deploy latest commit".
+
+After any environment variable change, redeploy that service. On Render this
+happens automatically when you save env vars; on Vercel you must press Redeploy.
+
+--------------------------------------------------------------------------------
+12. TROUBLESHOOTING - THE ERRORS YOU WILL ACTUALLY HIT
+--------------------------------------------------------------------------------
+Symptom: browser console "blocked by CORS policy".
+Cause  : backend CORS_ORIGINS does not exactly match the site origin.
+Fix    : set CORS_ORIGINS=https://teampulse.vercel.app (no trailing slash), save,
+         wait for redeploy. Confirm with:
+           curl -H "Origin: https://teampulse.vercel.app" -I https://teampulse-api.onrender.com/health
+         and look for access-control-allow-origin in the response.
+
+Symptom: every API call returns 500 and the log says "InvalidCatalogName" or
+         "database ... does not exist".
+Cause  : wrong DATABASE_URL, or migrations never ran.
+Fix    : use the +asyncpg prefix, ssl=require, then run alembic upgrade head.
+
+Symptom: "ModuleNotFoundError: No module named 'app'".
+Cause  : Render started uvicorn from the repo root instead of backend/.
+Fix    : set Root Directory = backend (or use backend.app.main:app in the start
+         command while keeping the working directory consistent).
+
+Symptom: "TypeError: connect() got an unexpected keyword argument 'sslmode'".
+Cause  : you kept ?sslmode=require with asyncpg.
+Fix    : change to ?ssl=require.
+
+Symptom: WebSocket fails with 403 or instantly closes.
+Cause  : token missing/expired, or ws:// used from an https page.
+Fix    : use wss:// and pass the access token in the query string the way
+         frontend/src/hooks/useWebSocket.ts does.
+
+Symptom: login works but every request after 15 minutes returns 401.
+Cause  : refresh token cookie is blocked cross-site, which happens when the
+         frontend and backend are on different domains.
+Fix    : the code already sends a Bearer token as a fallback; if you still see
+         it, confirm the refresh endpoint responds and that the cookie has
+         SameSite=None; Secure in production.
+
+Symptom: the site loads but every page redirects to /login.
+Cause  : NEXT_PUBLIC_API_URL is wrong, so the token refresh fails and the axios
+         interceptor treats you as logged out.
+Fix    : check the value ends with /api/v1, then redeploy (build-time variable).
+
+Symptom: "Today's Standup" card shows an error toast.
+Cause  : known bug in POST /api/v1/ai/my-standup (query vs body mismatch, bad
+         import). See remaining-tasks.txt.
+Fix    : fix the endpoint or hide the card. This is not a deployment problem.
+
+Symptom: images/fonts fine but pages 404 on refresh.
+Cause  : a static export or wrong output directory was selected.
+Fix    : for Next.js App Router on Vercel keep the default .next output; do not
+         set "Output Directory" to "out".
+
+--------------------------------------------------------------------------------
+13. FREE TIER LIMITS CHEAT SHEET
+--------------------------------------------------------------------------------
+  Vercel Hobby ....... 100 GB bandwidth/month, unlimited static, function limits
+  Render Free ........ 750 instance-hours/month, sleeps when idle, 512 MB RAM
+  Neon Free .......... 0.5 GB storage, limited compute hours, scales to zero
+  Upstash Free ....... 10k commands/day, 256 MB
+  Groq Free .......... rate-limited requests/minute, no card required
+
+If you outgrow these, the cheapest next step is usually Render Starter for the
+backend (removes sleeping) before touching anything else.
+
+--------------------------------------------------------------------------------
+14. GO-LIVE CHECKLIST
+--------------------------------------------------------------------------------
+  [ ] Repo pushed, .env not committed
+  [ ] Neon database created, DATABASE_URL converted to +asyncpg
+  [ ] Upstash Redis created, rediss:// URL saved
+  [ ] AI service deployed, /health returns 200
+  [ ] Backend deployed, /health and /docs return 200
+  [ ] Alembic migration applied to the cloud database
+  [ ] Seed script run (or demo users removed)
+  [ ] Frontend deployed, build log clean
+  [ ] CORS_ORIGINS exact match, login works in the browser
+  [ ] WebSocket connects (Network tab shows 101 Switching Protocols)
+  [ ] OAuth redirect URIs match the deployed domain
+  [ ] cron-job.org pings both services every 10 minutes
+  [ ] Demo passwords changed or demo accounts deleted
+  [ ] Screenshots taken for the resume/portfolio
+================================================================================

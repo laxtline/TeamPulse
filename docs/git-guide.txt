@@ -1,0 +1,243 @@
+================================================================================
+TEAMPULSE - GIT & GITHUB GUIDE (FOR A FRESHER)
+================================================================================
+Last updated: 18 November 2026
+Audience: someone who has used git add/commit/push a few times but panics when
+something goes wrong.
+
+--------------------------------------------------------------------------------
+1. THE MENTAL MODEL
+--------------------------------------------------------------------------------
+  Working directory  ->  Staging area  ->  Local repo  ->  Remote (GitHub)
+      (your edits)        (git add)        (git commit)     (git push)
+
+  Pulling goes the other way: remote -> local repo -> working directory.
+
+  A commit is a snapshot with a message. A branch is a movable label pointing at
+  one commit. "origin" is just the nickname for the GitHub URL. "master"/"main"
+  is the default branch name - this repo uses master.
+
+--------------------------------------------------------------------------------
+2. THE 8 COMMANDS THAT COVER 90% OF THE WORK
+--------------------------------------------------------------------------------
+  git status                      what changed, what is staged
+  git diff                        what changed, line by line (unstaged)
+  git add <file>                  stage one file
+  git add .                       stage everything in this folder
+  git commit -m "message"         snapshot the staged changes
+  git push                        upload commits
+  git pull                        download + merge remote commits
+  git log --oneline -10           last 10 commits, one line each
+
+Add these two and you can recover from almost anything:
+
+  git restore <file>              throw away unstaged edits in one file
+  git restore --staged <file>     unstage, keep the edits
+
+--------------------------------------------------------------------------------
+3. FIRST-TIME SETUP ON A NEW MACHINE
+--------------------------------------------------------------------------------
+  git config --global user.name  "Your Name"
+  git config --global user.email "you@example.com"
+
+  Check it:
+  git config --list
+
+  If you use HTTPS and get asked for a password every push, use a Personal
+  Access Token instead of your account password:
+    GitHub > Settings > Developer settings > Personal access tokens > Tokens
+    (classic) > Generate new token > scope "repo" > copy it.
+  Or switch to SSH:
+    ssh-keygen -t ed25519 -C "you@example.com"
+    then paste ~/.ssh/id_ed25519.pub into GitHub > Settings > SSH keys.
+
+  Windows line endings: if you see every file as modified after cloning, run
+    git config --global core.autocrlf true
+
+--------------------------------------------------------------------------------
+4. CLONING THIS PROJECT
+--------------------------------------------------------------------------------
+  git clone https://github.com/laxtline/TeamPulse.git
+  cd TeamPulse/teampulse
+
+  Important detail: the git repository lives inside the "teampulse" folder, not
+  in the outer "TeamPulse" folder. If "git status" says "not a git repository",
+  you are one level too high.
+
+  After cloning, the first thing you do is create your local env files:
+    copy backend\.env.example  backend\.env
+    copy frontend\.env.local.example  frontend\.env.local
+  Then fill in real values. These files are gitignored and must never be
+  committed.
+
+--------------------------------------------------------------------------------
+5. THE DAILY LOOP
+--------------------------------------------------------------------------------
+  git pull                      start from the latest code
+  ... edit files ...
+  git status                    see what you touched
+  git diff                      read your own change before committing
+  git add .
+  git commit -m "feat: add task filter by assignee"
+  git push
+
+Rule: one commit = one idea. If the message needs the word "and", it is
+probably two commits.
+
+--------------------------------------------------------------------------------
+6. COMMIT MESSAGE STYLE (what interviewers notice)
+--------------------------------------------------------------------------------
+  type: short summary in the imperative mood
+
+  feat:     new feature
+  fix:      bug fix
+  docs:     documentation only
+  style:    formatting, no logic change
+  refactor: code restructure, no behaviour change
+  test:     adding or fixing tests
+  chore:    tooling, deps, build config
+
+  Good:
+    feat: persist kanban ordering on drag end
+    fix: return 401 instead of 500 when refresh token expires
+    docs: add deployment steps for Neon + Render
+
+  Bad:
+    update
+    changes
+    final final v2
+    asdf
+
+--------------------------------------------------------------------------------
+7. BRANCHES
+--------------------------------------------------------------------------------
+  git branch                      list local branches
+  git checkout -b feat/task-filter   create and switch
+  git switch master               go back to master
+  git push -u origin feat/task-filter  first push of a new branch
+  git branch -d feat/task-filter  delete after merge
+
+  Simple workflow for a solo project:
+    master  = always deployable
+    feature branches for anything bigger than a typo
+    open a Pull Request on GitHub, read your own diff, then merge
+
+  Even with no team, Pull Requests are worth it: they give you a diff view and a
+  review record that you can show in an interview.
+
+--------------------------------------------------------------------------------
+8. MERGING AND REBASING (the short version)
+--------------------------------------------------------------------------------
+  Merge (default, keeps history):
+    git switch master
+    git merge feat/task-filter
+
+  Rebase (linear history, rewrites commit ids):
+    git switch feat/task-filter
+    git rebase master
+
+  Rule for beginners: rebase only on branches nobody else uses. Never rebase
+  master after it is pushed.
+
+  Conflicts look like this inside the file:
+    <<<<<<< HEAD
+    your version
+    =======
+    their version
+    >>>>>>> feat/task-filter
+  Edit the file to the version you want, delete the markers, then:
+    git add <file>
+    git commit            (merge) or git rebase --continue (rebase)
+
+--------------------------------------------------------------------------------
+9. UNDO CHEAT SHEET
+--------------------------------------------------------------------------------
+  Situation                              Command
+  --------------------------------------------------------------------------
+  messed up a file, not committed        git restore file
+  staged something by mistake            git restore --staged file
+  wrong commit message, not pushed       git commit --amend -m "new message"
+  forgot a file in the last commit       git add file && git commit --amend --no-edit
+  committed and pushed, need to revert   git revert <commit-id>     (safe, new commit)
+  want to see what a commit changed      git show <commit-id>
+  want to move branch back (local only)  git reset --hard <commit-id>   (destructive)
+  deleted a file, want it back           git restore file
+  accidentally deleted an untracked file no git help - it was never tracked
+
+  The dangerous ones: reset --hard, clean -fd, push --force. If a command has
+  --hard or --force in it, stop and read twice.
+
+--------------------------------------------------------------------------------
+10. .GITIGNORE IN THIS PROJECT
+--------------------------------------------------------------------------------
+  These must stay ignored:
+    .env, .env.local, .env.*.local     secrets
+    node_modules/                      huge, reinstallable
+    .next/                             build output
+    __pycache__/, *.pyc                python bytecode
+    .venv/, venv/                      virtualenv
+    .pytest_cache/, .mypy_cache/       tool caches
+    coverage/, playwright-report/      test artifacts
+    *.log                              logs
+    .DS_Store, Thumbs.db               OS junk
+
+  Check whether a file is ignored:
+    git check-ignore -v backend/.env
+
+  If a secret was committed once, ignoring it later is not enough - it stays in
+  history. Rotate the key first, then remove it from history with git filter-repo
+  (or BFG) if the repo is public.
+
+--------------------------------------------------------------------------------
+11. WHAT TO DO WHEN GIT COMPLAINS
+--------------------------------------------------------------------------------
+  "not a git repository"
+    You are in the wrong folder. cd into teampulse.
+
+  "Your local changes would be overwritten by merge"
+    Commit or stash first: git stash, git pull, git stash pop.
+
+  "Updates were rejected because the remote contains work you do not have"
+    git pull --rebase, fix conflicts if any, then push.
+
+  "fatal: refusing to merge unrelated histories"
+    Usually from a repo created twice. git pull origin master --allow-unrelated-histories
+    Decide carefully - you may end up with duplicates.
+
+  "detached HEAD"
+    You checked out a commit instead of a branch. git switch master gets you back.
+
+  "Permission denied (publickey)"
+    Your SSH key is not registered. Use HTTPS, or add the key to GitHub.
+
+  "remote: Support for password authentication was removed"
+    Use a Personal Access Token, not your GitHub password.
+
+  "LF will be replaced by CRLF"
+    Harmless warning on Windows. Set core.autocrlf as shown in section 3.
+
+--------------------------------------------------------------------------------
+12. GIT HYGIENE FOR A PORTFOLIO REPO
+--------------------------------------------------------------------------------
+  - A README that explains what the project is, how to run it, and the tech
+    stack. This repo has one; keep it current.
+  - No committed secrets, no node_modules, no .next, no __pycache__.
+  - Commits spread over time, not one giant "upload" commit. Recruiters look.
+  - A .gitignore committed in the first commit.
+  - Optional but strong: a LICENSE file (currently MISSING).
+  - Optional but strong: a CI badge that actually runs (currently no workflows).
+  - Tag releases if you deploy versions: git tag -a v1.0.0 -m "first deploy"
+    then git push origin v1.0.0
+
+--------------------------------------------------------------------------------
+13. USING GIT TO EXPLAIN YOUR PROJECT IN AN INTERVIEW
+--------------------------------------------------------------------------------
+  Have these three commands ready:
+    git log --oneline -20            shows steady, scoped work
+    git shortlog -sn                 shows who contributed (you)
+    git diff HEAD~10 --stat          shows the scale of recent change
+
+  A good answer sounds like: "I worked on master with short-lived feature
+  branches, one commit per logical change, and I kept secrets in a gitignored
+  .env that I never committed."
+================================================================================

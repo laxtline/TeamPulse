@@ -1,0 +1,295 @@
+================================================================================
+TEAMPULSE - VIVA / ORAL EXAM SCRIPT
+================================================================================
+Last updated : 18 November 2026
+For: college viva, project review, or a technical panel that starts with "explain
+your project". Written to be spoken, not read silently.
+
+Structure:
+  Part A  the 90-second opening
+  Part B  the demo walkthrough (what to click, in what order)
+  Part C  the 20 questions that always come, with model answers
+  Part D  questions you should ask back
+  Part E  the "if I had more time" answer
+  Part F  recovery lines for when you do not know
+
+--------------------------------------------------------------------------------
+PART A - THE 90-SECOND OPENING
+--------------------------------------------------------------------------------
+"Good morning. My project is TeamPulse, a team collaboration platform.
+
+The problem I started with: in my college project team we tracked work in a
+WhatsApp group and one spreadsheet. Nobody knew the real status of a task without
+asking, the history vanished as the chat scrolled, and priority was whatever the
+loudest person said.
+
+TeamPulse puts all of that in one place. It has four ideas:
+  one, a team with roles, so permissions are real;
+  two, projects that contain tasks;
+  three, a Kanban board where dragging a card changes its status and that change
+       is saved in the database;
+  four, an AI service that scores a task's priority from its due date and status,
+       and falls back to local rules if the AI is unavailable.
+
+Technically it is three services. The frontend is Next.js 14 with TypeScript,
+Tailwind and TanStack Query. The main backend is FastAPI with async SQLAlchemy on
+PostgreSQL, plus Redis. The AI part is a separate FastAPI service that calls
+Groq's Llama 3.3 model. I separated the AI service because model calls are slow
+and can fail, and I did not want that risk inside the main request path.
+
+Authentication uses JWT with a short access token and a rotating refresh token
+stored hashed in the database, and OAuth for Google and GitHub.
+
+It is deployed as three services on free tiers - Vercel, Render, Neon, Upstash -
+and it also runs locally with one Docker Compose command.
+
+The known weak point is the real-time layer: the WebSocket connection and
+presence indicator work, but the task services do not emit broadcast events yet,
+so two browsers do not sync live. That is the next fix and I know exactly where
+it goes."
+
+Stop talking there. Let them ask.
+
+--------------------------------------------------------------------------------
+PART B - THE DEMO WALKTHROUGH (7 minutes, rehearse it)
+--------------------------------------------------------------------------------
+  B1  Landing page (15 sec)
+      "This is the entry point. Register, log in, or use Google/GitHub."
+
+  B2  Log in as arjun@teampulse.ac (30 sec)
+      "Login returns an access token valid for 15 minutes and a refresh token
+       valid for 7 days. It is stored in an httpOnly cookie, with a Bearer
+       fallback because the frontend and backend are on different domains in
+       production."
+
+  B3  Dashboard (45 sec)
+      "Counts of projects and tasks, recent activity, and a standup card.
+       I will be honest: the two charts are sample data right now, and the
+       standup card has a bug I am fixing - the endpoint expects the date as a
+       query parameter while the client sends it in the body."
+
+  B4  Projects -> open WEB (30 sec)
+      "Each project has a short key, unique within the team, so tasks can be
+       referenced like WEB-12."
+
+  B5  Board (2 min) - THE MAIN EVENT
+      Drag a card from Backlog to In Progress.
+      "The UI updates immediately - that is an optimistic update - and then a
+       PATCH request sends the new status and position. The service recalculates
+       positions for the affected columns inside one transaction."
+      Now refresh the page.
+      "It stayed. So the change is in PostgreSQL, not just in React state."
+      That single refresh is the strongest moment in the demo. Do not skip it.
+
+  B6  Task detail (1 min)
+      "Description, status, priority, assignee, story points, due date. Below:
+       comments and the activity log."
+      Add a comment.
+      "The comment saves, and an activity row is written with the action and the
+       old and new values. So the history is data, not a guess."
+
+  B7  AI priority (1 min)
+      "I ask for a priority score. It goes to my AI microservice, which builds a
+       short prompt with the title, due date, status and how overdue it is, calls
+       Groq's Llama 3.3, and returns a score from 1 to 10, a reason, and an
+       action like Do now or Defer."
+      Change the due date to something far in the past, request again, show the
+      score rising.
+      "And if I stop the AI service, it still returns a score using a local
+       rule-based fallback, so the feature degrades instead of breaking."
+
+  B8  Team page (30 sec)
+      "Four roles: owner, admin, member, viewer. Enforced on the server, not in
+       the UI. For example a viewer who forges the request still gets 403."
+
+  B9  Swagger (30 sec)
+      "http://localhost:8000/docs. FastAPI generates this from the code, so the
+       API documentation cannot drift from the implementation."
+
+  B10 Close (15 sec)
+      "So: auth, teams with roles, projects, tasks on a board, comments with an
+       audit trail, and an AI priority service with a fallback - deployed as
+       three services."
+
+If a step fails during the demo, do not restart the whole thing. Say what should
+have happened, show the log or the database row, and move on.
+
+--------------------------------------------------------------------------------
+PART C - THE 20 QUESTIONS THEY ALWAYS ASK
+--------------------------------------------------------------------------------
+C1 "What is your project about, in one line?"
+   "A team collaboration tool: projects, a Kanban board, comments, and AI task
+    prioritisation, built as three services."
+
+C2 "Why did you choose this project?"
+   "Because I had the problem myself. A todo list would not have taught me
+    permissions, concurrency or deployment. This one did."
+
+C3 "What is the architecture?"
+   Draw it while speaking:
+     Browser -> Next.js -> FastAPI -> PostgreSQL
+                              -> Redis
+                              -> AI service -> Groq
+   Three deployable services, five processes including the two data stores.
+
+C4 "Why three services and not one?"
+   "The AI call is slow and can fail. Isolating it keeps normal requests fast and
+    stops an AI outage from breaking the app. The cost is more deployment
+    surface, which I accepted deliberately."
+
+C5 "What is REST?"
+   "An architectural style for APIs: resources identified by URLs, standard HTTP
+    verbs, stateless requests, and representations in JSON. In my API,
+    POST /tasks creates, GET /tasks lists, PATCH /tasks/{id} updates,
+    DELETE /tasks/{id} removes, and the status code carries meaning - 201 for
+    created, 403 for forbidden, 422 for validation errors."
+
+C6 "Difference between authentication and authorization?"
+   "Authentication is proving who you are - login. Authorization is deciding
+    what you may do - the role check. I return 401 when you are not logged in and
+    403 when you are logged in but not allowed."
+
+C7 "How do you store passwords?"
+   "bcrypt hash with a per-user salt. The plaintext is never stored and never
+    returned in any response. Verification hashes the submitted password and
+    compares."
+
+C8 "What is JWT? Why two tokens?"
+   "A signed token containing claims - user id, token type, expiry - that the
+    server can verify without a database lookup. Two tokens because there is a
+    trade-off: a short access token limits the damage if stolen, and a long
+    refresh token avoids asking for the password every 15 minutes. The refresh
+    token is stored hashed in the database so it can be revoked."
+
+C9 "What happens when the access token expires?"
+   "The API returns 401, the axios interceptor calls /auth/refresh once, gets a
+    new pair, and retries the original request. Concurrent requests wait for that
+    single refresh instead of firing ten refreshes."
+
+C10 "What is a foreign key? Give an example from your schema."
+   "A column that must reference an existing row in another table.
+    tasks.project_id references projects.id, so a task cannot exist in a project
+    that does not exist, and deleting a project is handled explicitly rather than
+    leaving orphan rows."
+
+C11 "What is an index and which ones did you add?"
+   "A lookup structure that avoids scanning the whole table. I indexed the hot
+    filters: tasks on project_id plus status for the board query, tasks on
+    assignee_id for my-tasks, comments on task_id, and activities on task_id.
+    Nineteen indexes and constraints in total. The trade-off is slower writes and
+    more storage."
+
+C12 "What is normalization? Is your schema normalized?"
+   "Organising data to remove duplication. Yes, to third normal form: team
+    membership is its own table because a role belongs to a user-in-a-team, not
+    to a user or a team alone. That is exactly the kind of duplication
+    normalization removes."
+
+C13 "What is an ORM? Advantage and disadvantage?"
+   "Object-relational mapping - Python classes that map to tables. Advantage:
+    type safety, relationships, no string SQL, protection from injection.
+    Disadvantage: it can generate inefficient queries such as N+1, which is why I
+    use eager loading for list endpoints."
+
+C14 "What is a migration?"
+   "A versioned, ordered change to the database schema, applied with Alembic. It
+    lets a schema change reach every environment reproducibly and reversibly.
+    I have one migration that builds the whole schema, and I will be honest that
+    the downgrade path is barely tested."
+
+C15 "How does drag and drop save?"
+   "dnd-kit reports the card and the target column on drag end. The UI updates
+    optimistically, then PATCH /tasks/{id}/move sends status and position. The
+    service recalculates positions for the affected columns in one transaction.
+    On failure the UI rolls back. Refreshing shows the persisted state."
+
+C16 "Two users drag at the same time - what happens?"
+   "Today the last write wins, and the order can look surprising. The fix is
+    either a version column for optimistic concurrency or gap-based positions so
+    an insert rewrites one row instead of many. I know the fix; I have not
+    shipped it."
+
+C17 "How does the AI part work?"
+   "A separate FastAPI service builds a short prompt - title, description,
+    priority, due date, status, days overdue - calls Groq's Llama 3.3, and parses
+    back a score, a reason and an action. Timeout and fallback: if anything
+    fails, local rules compute the score from priority and overdue days."
+
+C18 "Is the AI reliable? What if it gives a bad answer?"
+   "It is a suggestion, not a decision. The user can ignore it, and it is not
+    used for any automatic action. That is deliberate: a probabilistic component
+    should not silently control workflow."
+
+C19 "How is it tested?"
+   "Frontend: Vitest units for shared components and the API client, Playwright
+    for auth, board and task flows. Backend: honestly nothing yet - the folders
+    exist but there are no tests. My next task is pytest covering the permission
+    matrix, because that is the riskiest logic in the app."
+
+C20 "How is it deployed?"
+   "Frontend on Vercel, the two Python services on Render, PostgreSQL on Neon,
+    Redis on Upstash. Free tier, so a cron pings /health to stop the backend
+    sleeping. Environment variables hold all secrets, with the names documented
+    and the actual .env gitignored."
+
+--------------------------------------------------------------------------------
+PART D - QUESTIONS TO ASK THE EXAMINER
+--------------------------------------------------------------------------------
+  "Would you have split the AI service, or kept it inside the main API?"
+  "For a project of this size, would you prioritise tests or the real-time
+   broadcast first?"
+  "Is there a part of the architecture you would change?"
+
+Asking one real question signals you think about trade-offs, not just features.
+
+--------------------------------------------------------------------------------
+PART E - "IF YOU HAD MORE TIME"
+--------------------------------------------------------------------------------
+Have exactly three, in this order, each with a reason:
+
+  1. Broadcast task and comment events over the existing WebSocket layer, so two
+     browsers sync. The connection and presence already work; the services just
+     never emit. Highest visible impact.
+  2. Backend tests for the permission matrix. Ownership and role rules are the
+     riskiest logic and are currently unproven.
+  3. A CI workflow so lint and tests run on every push, plus a second database
+     migration so the schema-evolution story is real rather than theoretical.
+
+Do not list ten things. Three with reasons beats ten without.
+
+--------------------------------------------------------------------------------
+PART F - RECOVERY LINES
+--------------------------------------------------------------------------------
+  When you do not know:
+    "I have not implemented that, so I would not want to guess. What I do know
+     is how I would find out - I would check the SQLAlchemy docs for the async
+     session behaviour and write a small test to confirm."
+
+  When you are wrong:
+    "That is a fair point, you are right. The correct behaviour would be X, and
+     here is what in my code causes the difference."
+
+  When they push on a gap:
+    "Yes, that is a real gap. Here is the cause, here is the fix, and here is the
+     effort estimate. It is on my list after the current priority."
+
+  When the demo breaks:
+    "That should have returned the tasks. Let me check the API log - if it is a
+     500 the issue is server-side, if there is no request at all it is the
+     frontend." (Then actually look. Narrating your debugging is a plus, not a
+     minus.)
+
+Never say: "It works on my machine", "That is a framework bug", "I copied that
+part", or "I do not know" with no follow-up.
+
+--------------------------------------------------------------------------------
+FINAL CHECKLIST
+--------------------------------------------------------------------------------
+  [ ] Opening said out loud, timed under 2 minutes
+  [ ] Demo clicked through once with the app running
+  [ ] Refresh-after-drag moment rehearsed - it is the highlight
+  [ ] AI fallback demonstrated by stopping the service (or just explained)
+  [ ] Three "if I had more time" items memorised
+  [ ] One question ready for the panel
+  [ ] Know the number of tables (9), routes (~31), and why three services
+================================================================================

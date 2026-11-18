@@ -1,0 +1,202 @@
+================================================================================
+TEAMPULSE - RESUME BULLETS & ATS NOTES
+================================================================================
+Last updated : 18 November 2026
+Rule for everything below: only claim what you can demo or explain. If you did
+not build a part, remove the bullet - an interviewer will ask.
+
+--------------------------------------------------------------------------------
+1. PROJECT HEADER (pick one line)
+--------------------------------------------------------------------------------
+Short version (one line, for a dense resume):
+  TeamPulse - Full-stack team collaboration platform | Next.js, FastAPI,
+  PostgreSQL, Docker | github.com/laxtline/TeamPulse
+
+Expanded version (two lines):
+  TeamPulse - Team collaboration platform with Kanban board and AI task
+  prioritisation
+  Next.js 14 - TypeScript - FastAPI - PostgreSQL - Redis - Docker - Groq LLM
+
+Always include the GitHub link. A resume without a link is a claim without
+evidence.
+
+--------------------------------------------------------------------------------
+2. STRONG BULLETS (choose 3-5, not all)
+--------------------------------------------------------------------------------
+Each bullet below uses the pattern: what you built + how + the effect. Numbers
+are real for this project; do not inflate them.
+
+  Architecture
+  - Architected a three-service system (Next.js frontend, FastAPI API, FastAPI
+    AI microservice) with PostgreSQL and Redis, isolating slow LLM calls so an
+    AI outage cannot degrade core CRUD performance.
+
+  Authentication
+  - Implemented JWT authentication with 15-minute access tokens and
+    single-use rotating refresh tokens stored hashed in PostgreSQL; added
+    Google/GitHub OAuth via NextAuth so all three login paths issue one token
+    model.
+
+  Database
+  - Designed a 9-table normalised schema (users, teams, projects, tasks,
+    comments, activity log, refresh tokens, OAuth accounts, memberships) with
+    foreign keys, enum types and 19 indexes/constraints, managed through Alembic
+    migrations.
+
+  Permission system
+  - Built a four-level role matrix (owner/admin/member/viewer) enforced in the
+    service layer rather than the UI, including invariants such as preventing
+    demotion of the last team owner.
+
+  Core feature
+  - Built a five-column Kanban board with dnd-kit drag-and-drop, optimistic UI
+    updates, and server-side position recalculation persisted in a single
+    transaction.
+
+  Audit trail
+  - Implemented an activity log capturing old and new values for task create,
+    update, move, assign and delete, giving the team a queryable history instead
+    of relying on chat scrollback.
+
+  AI integration
+  - Integrated Groq's Llama 3.3 70B through a separate FastAPI service to score
+    task priority 1-10 with reasoning and a recommended action; added a
+    rule-based fallback so the feature degrades instead of failing when the API
+    key is absent.
+
+  Deployment
+  - Deployed three services across Vercel, Render, Neon and Upstash free tiers;
+    resolved cross-site cookie behaviour, CORS allow-listing, asyncpg
+    connection-string differences and correct WSS handling for production.
+
+  Developer experience
+  - Containerised the full stack with Docker Compose for development and
+    separate multi-stage production Dockerfiles; documented a setup path that
+    takes a new developer from clone to running board.
+
+  Frontend quality
+  - Used TanStack Query for server-state caching and invalidation alongside
+    Zustand for client state, with typed API contracts and a single axios client
+    handling token refresh and error normalisation.
+
+  Testing
+  - Added Vitest unit tests for shared UI primitives and the API client plus
+    Playwright end-to-end specs for authentication, board and task flows.
+
+--------------------------------------------------------------------------------
+3. SHORTER BULLETS (for a two-page resume with other projects)
+--------------------------------------------------------------------------------
+  - Built a full-stack Kanban collaboration app (Next.js, FastAPI, PostgreSQL)
+    with JWT + OAuth auth, role-based access control and a drag-and-drop board
+    that persists task status and ordering.
+  - Designed a 9-table relational schema with constraints and indexes, versioned
+    with Alembic migrations.
+  - Integrated an LLM-based priority scorer as a separate FastAPI microservice
+    with timeout handling and a deterministic fallback.
+  - Containerised the stack with Docker Compose and deployed to Vercel, Render,
+    Neon and Upstash.
+
+--------------------------------------------------------------------------------
+4. WHAT NOT TO WRITE
+--------------------------------------------------------------------------------
+  Do not write                              Why
+  --------------------------------------------------------------------------
+  "Real-time collaboration"                 Broadcast is not emitted. Presence
+                                            only. Say "WebSocket presence layer"
+                                            or fix it first.
+  "Microservices architecture"              It is three services, not
+                                            microservices. Overclaiming invites
+                                            a definition trap.
+  "AI-powered analytics dashboard"          Two charts are hard-coded and the
+                                            standup endpoint is broken.
+  "95% test coverage"                       There are 4 unit test files and no
+                                            backend tests.
+  "Handled 10k users" / "scaled to X"       No load testing exists.
+  "Team of 4 developers"                    Unless it was genuinely a team.
+                                            Solo work is fine; say solo.
+  "Reduced latency by 40%"                  No before/after measurement.
+  "Production-grade"                        It is a portfolio deployment with
+                                            demo credentials in the seed script.
+
+If you fix a gap (real-time broadcast, backend tests, CI), then you may add the
+matching bullet. Until then, the shorter honest version is stronger.
+
+--------------------------------------------------------------------------------
+5. ATS NOTES
+--------------------------------------------------------------------------------
+5.1 Keywords that should literally appear in your resume, because these are what
+    the filters scan for:
+      Python, JavaScript, TypeScript, React, Next.js, FastAPI, REST API,
+      PostgreSQL, SQL, SQLAlchemy, Redis, Docker, Git, JWT, OAuth, Tailwind CSS,
+      HTML, CSS, API integration, unit testing, Agile
+
+5.2 Format rules
+  - One column. Tables and text boxes break older parsers.
+  - Standard headings: Education, Skills, Projects, Experience, Certifications.
+  - Dates as MM/YYYY. No graphics, no icons as bullets, no photo.
+  - File name: Firstname_Lastname_Resume.pdf
+  - Save as PDF, but keep a .docx source - some portals demand it.
+  - Spell out an acronym once: "Application Programming Interface (API)".
+
+5.3 Section order for a fresher
+  Contact -> Skills -> Projects -> Education -> Certifications -> Extras
+  Projects go above education because your project is the differentiator.
+  Education above projects only if you are from a tier-1 institute.
+
+5.4 Skills block that matches this project
+  Languages      Python, JavaScript, TypeScript, SQL
+  Frontend       React, Next.js 14 (App Router), Tailwind CSS, HTML5, CSS3,
+                 TanStack Query, Zustand
+  Backend        FastAPI, REST, Pydantic v2, SQLAlchemy 2.0 (async), Alembic,
+                 JWT, OAuth 2.0
+  Databases      PostgreSQL, Redis
+  Tools          Docker, Docker Compose, Git, GitHub, Postman, VS Code
+  Concepts       RBAC, ORM, migrations, async I/O, CORS, WebSocket, CI/CD basics
+
+Only list a skill if you can survive one follow-up question on it.
+
+--------------------------------------------------------------------------------
+6. LINKEDIN / PORTFOLIO VERSION
+--------------------------------------------------------------------------------
+Headline:
+  Full-stack developer (Python / FastAPI / Next.js) - building team tools
+
+About, project paragraph:
+  I built TeamPulse, a collaboration platform for small teams: projects, a
+  drag-and-drop Kanban board, comments, an audit trail, and an AI service that
+  scores task priority. It runs as three services - Next.js on Vercel, two
+  FastAPI services on Render, PostgreSQL on Neon, Redis on Upstash - and the
+  whole thing is containerised so it also runs locally with one command.
+
+Featured section: repository link + two screenshots (board, task detail with AI
+score). A screenshot converts far better than a paragraph.
+
+--------------------------------------------------------------------------------
+7. MATCHING BULLETS TO JOB DESCRIPTIONS
+--------------------------------------------------------------------------------
+Read the JD, pick the 3 bullets whose keywords overlap, and put those first.
+Order matters: the reader scans the first two lines only.
+
+  JD says "REST APIs"           -> use the JWT / API bullets
+  JD says "database design"     -> use the 9-table schema bullet
+  JD says "React"               -> use the Kanban + TanStack Query bullets
+  JD says "cloud/deployment"    -> use the three-service deployment bullet
+  JD says "AI/LLM"              -> use the Groq integration bullet
+  JD says "testing"             -> use the Vitest/Playwright bullet, and be
+                                   ready to admit backend tests are pending
+
+--------------------------------------------------------------------------------
+8. INTERVIEW CROSS-REFERENCE
+--------------------------------------------------------------------------------
+Every bullet above has a matching answer in interview-prep.txt:
+  architecture      -> section 3.1
+  auth              -> section 3.3
+  database          -> section 3.5
+  permissions       -> section 3.8
+  Kanban            -> section 3.4
+  AI                -> section 3.7
+  deployment        -> section 3.10
+  testing           -> section 3.9
+
+If you cannot find the answer for a bullet you wrote, delete the bullet.
+================================================================================

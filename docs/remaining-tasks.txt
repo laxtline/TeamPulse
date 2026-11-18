@@ -1,0 +1,342 @@
+================================================================================
+TEAMPULSE - REMAINING TASKS (WHAT IS STILL OPEN)
+================================================================================
+Last updated : 18 November 2026
+Purpose      : an honest, prioritised backlog. Everything here is something a
+               reviewer, interviewer or you-next-month could point at.
+
+Two lenses are applied at the end:
+  LENS 1 - the learning roadmap (Web Fundamentals -> ... -> Migrations): what is
+           covered, partial, or missing in this codebase.
+  LENS 2 - fresher placement readiness for TCS / Infosys / Wipro / Accenture /
+           Cognizant / Capgemini / Tech Mahindra / Flipkart / Paytm / Razorpay.
+
+--------------------------------------------------------------------------------
+0. HOW TO READ THE PRIORITIES
+--------------------------------------------------------------------------------
+  P0  breaks a user-visible feature or a claim in the README. Fix first.
+  P1  weakens the project's credibility in an interview. Fix if time allows.
+  P2  polish, nice to have, or blocked on something else.
+
+  Effort is a rough estimate for one person who already knows this codebase.
+
+--------------------------------------------------------------------------------
+1. P0 - BROKEN THINGS
+--------------------------------------------------------------------------------
+T-01  Fix POST /api/v1/ai/my-standup
+      Effort: 2-3 hours | Files: backend/app/api/v1/ai.py,
+                              backend/app/services/ai_service.py
+      Three defects, all in one endpoint:
+        a) The route declares `date` as a query parameter, but the frontend
+           sends it in the JSON body -> 422 Unprocessable Entity.
+        b) The module imports app.models.activity, which does not exist
+           (the model is app.models.activity_log or similar) -> ImportError at
+           import time -> 500.
+        c) It passes a user id into a service function that expects a task id.
+      Fix: make `date` an optional body field defaulting to today, import the
+      correct model, and add a service function that queries activities by user
+      and date range. Then re-test the dashboard card in the browser.
+      Done when: the "Today's Standup" card renders a summary for a seeded user.
+
+T-02  Broadcast task and comment events over WebSocket
+      Effort: 4-6 hours | Files: backend/app/services/task_service.py,
+                                 backend/app/services/comment_service.py,
+                                 backend/app/services/websocket.py
+      manager.publish_event() is defined but never called. Consequence: the two
+      browser tabs do not sync, and the README's real-time claim is currently
+      unmet end to end.
+      Fix: after a successful commit in create/update/move/delete task and in
+      create comment, call publish_event(project_id, {type, payload}). On the
+      frontend, invalidate the relevant TanStack Query keys on message receipt.
+      Done when: two tabs, one drag -> the other tab updates without refresh.
+
+T-03  Persist the AI priority score
+      Effort: 1-2 hours | Files: backend/app/api/v1/ai.py, tasks schema/service
+      The score is returned and displayed but never written to tasks.ai_priority,
+      so it disappears on refresh. Either persist it (add a PATCH or write inside
+      the endpoint) or remove the column and stop implying it is stored.
+      Done when: refresh the task page and the score is still there.
+
+T-04  Pass team members into the task modal
+      Effort: 1-2 hours | Files: frontend/src/components/board/*, TaskModal
+      TaskModal hardcodes members = [] and the board never supplies them, so the
+      assignee dropdown is always empty. Pass the project's team members down, or
+      fetch them inside the modal with a query.
+      Done when: creating a task lets you pick a real assignee.
+
+--------------------------------------------------------------------------------
+2. P1 - CREDIBILITY GAPS
+--------------------------------------------------------------------------------
+T-05  Add a dashboard layout and mount the sidebar
+      Effort: 3-4 hours | Files: new frontend/src/app/(dashboard)/layout.tsx
+      Sidebar, Navbar and ProtectedRoute are fully built but imported nowhere.
+      There is no (dashboard)/layout.tsx, so every dashboard page is bare.
+      Fix: create the route group layout that renders Sidebar + Navbar around
+      children and wraps in ProtectedRoute. Delete the dead imports afterwards.
+      Done when: navigating between dashboard pages keeps the sidebar mounted.
+
+T-06  Replace the mock dashboard charts with real aggregates
+      Effort: 4-6 hours | Files: dashboard page, backend stats endpoint
+      Velocity (5 hard-coded sprint rows) and workload (3 hard-coded people) are
+      fake. Add GET /api/v1/projects/{id}/stats or /teams/{id}/stats returning
+      per-status counts and per-assignee open tasks, then feed the charts.
+      Done when: moving a task changes a chart after refresh.
+
+T-07  Backend tests
+      Effort: 1-2 days | Files: backend/tests/*
+      The test folders exist but are empty. There is no proof the permission
+      matrix works. Start with the highest-value cases:
+        - register/login/refresh/logout
+        - a viewer cannot create a task (403)
+        - a member cannot delete another member's comment (403)
+        - moving a task rejects an invalid status (422)
+        - a non-member cannot read a project (403/404)
+      Use pytest + pytest-asyncio + httpx.AsyncClient against the test database
+      from docker-compose.test.yml.
+
+T-08  Add CI
+      Effort: 3-4 hours | Files: .github/workflows/ci.yml (does not exist)
+      Currently nothing runs on push. A minimal workflow: install deps, run
+      frontend lint + unit tests, run backend tests, fail the build on error.
+      Done when: a green check appears on the commit and a badge sits in the
+      README.
+
+T-09  Wire the settings buttons that do nothing
+      Effort: 3-5 hours
+        - Settings > notifications: currently localStorage only. Either label it
+          "saved on this device" or back it with an API.
+        - Delete Account: not connected.
+        - Team settings Save / Delete team: not connected.
+        - Forgot password: endpoint returns success but no mail is sent. Either
+          integrate a mail provider (Resend/SendGrid free tier) or return an
+          explicit "not configured" message.
+
+T-10  Fix or remove dead links
+      Effort: 1 hour
+      The project page links to /analytics and to a team settings route that do
+      not exist. Either build a stub page or remove the links. A 404 in a demo is
+      worse than a missing button.
+
+T-11  Remove the unused socket.io-client dependency
+      Effort: 15 minutes
+      The app uses the browser's native WebSocket. Keeping an unused dependency
+      invites the question "why two?" in an interview.
+
+T-12  Resolve the duplicate UI infrastructure
+      Effort: 2-3 hours
+      Two toast systems (Zustand Toaster and sonner) and two theme mechanisms
+      (uiStore and next-themes). Pick one of each. Duplication reads as
+      unfinished work.
+
+T-13  Reconcile documentation drift
+      Effort: 1 hour
+      - backend/README.md says 7 tables; the code has 9.
+      - DEPLOY.md lists demo accounts john/jane/bob@teampulse.demo that do not
+        exist. The real ones are admin/arjun/priya/rohan@teampulse.ac.
+      - README claims real-time updates that are not broadcast yet.
+      Fix the text, or fix the code. Do not leave both.
+
+--------------------------------------------------------------------------------
+3. P2 - POLISH
+--------------------------------------------------------------------------------
+T-14  Pagination and filtering on task lists (scale story).
+T-15  Add a LICENSE file (currently missing - a public repo with no licence is
+      technically "all rights reserved").
+T-16  Seed a second team so multi-team switching can be demonstrated.
+T-17  Add email verification on register.
+T-18  Add basic rate limiting tests and an account lockout after N failed logins.
+T-19  Accessibility pass: focus rings on the board cards, aria labels on icon
+      buttons, contrast check on the priority chips.
+T-20  Add a project "insights" implementation - GET /ai/project-insights
+      currently returns an empty stub.
+T-21  Screenshots and a 60-second demo GIF in the README. Biggest single
+      improvement per minute spent for a portfolio repo.
+
+--------------------------------------------------------------------------------
+4. LENS 1 - LEARNING ROADMAP COVERAGE
+--------------------------------------------------------------------------------
+The roadmap: Web Fundamentals, Git, HTML, CSS, Python, FastAPI, React, Next.js,
+PostgreSQL, ORM, Migrations. Graded against what this repo actually contains.
+
+  Web Fundamentals            COVERED
+    Evidence: HTTP verbs and status codes used correctly (201 on create, 403 vs
+    401 distinction, 422 on validation), REST resource naming, CORS configured
+    from an allow-list, cookies vs Bearer, HTTPS/WSS in production, CSP headers.
+    Gap: no explicit cache headers, no ETag, no pagination semantics.
+
+  Git                         PARTIAL
+    Evidence: real history, a .gitignore that covers env/node_modules/pycache,
+    the repo is on GitHub.
+    Gap: no CI, no LICENSE, no release tags, no PR workflow visible in history.
+    A reviewer who opens the commit list wants to see scoped commits.
+
+  HTML                        COVERED (indirectly)
+    Evidence: semantic structure comes through JSX (nav, main, section, form,
+    label/input pairing), accessible form controls.
+    Gap: no standalone HTML work to point at; be ready to explain semantics as
+    rendered by React rather than hand-written markup.
+
+  CSS                         COVERED
+    Evidence: Tailwind utility usage, responsive breakpoints, dark mode via a
+    class strategy, component variants with cva, no inline style soup.
+    Gap: two theme mechanisms coexist (T-12), which muddies the story.
+
+  Python                      COVERED
+    Evidence: type hints throughout, async/await, Pydantic v2 models, enums,
+    service classes, exception handling, a seed script, virtualenv + pinned
+    requirements.
+    Gap: no backend tests, so the Python quality claim is unproven by CI.
+
+  FastAPI                     COVERED
+    Evidence: routers with prefixes and tags, dependency injection for the DB
+    session and current user, Pydantic schemas for request/response, automatic
+    Swagger at /docs, WebSocket endpoints, custom exception handling, lifespan
+    startup hooks.
+    Gap: the standup endpoint is broken (T-01); no background tasks used.
+
+  React                       COVERED
+    Evidence: function components, hooks, custom hooks, context-free state via
+    Zustand, TanStack Query for server state, optimistic drag updates,
+    component composition, controlled forms.
+    Gap: a few components are built but unmounted (T-05).
+
+  Next.js                     COVERED
+    Evidence: App Router, nested route segments, dynamic routes ([id]),
+    route-level metadata, server and client component split, next.config.js
+    headers, standalone Docker output, env handling.
+    Gap: no route group layout for the dashboard, so the App Router story has a
+    visible hole.
+
+  PostgreSQL                  COVERED
+    Evidence: 9 tables, foreign keys, unique constraints (email, team+user,
+    project key per team), enum types, indexes (19 indexes/constraints), cascade
+    choices, timestamps everywhere.
+    Gap: no query plan or index-usage evidence; no transaction isolation
+    discussion. Be ready to explain why each index exists.
+
+  ORM (SQLAlchemy 2.0)        COVERED
+    Evidence: declarative models with Mapped[] typing, relationships, async
+    engine with asyncpg, session-per-request dependency, selectinload/eager
+    loading to avoid N+1 in list endpoints.
+    Gap: no repository abstraction and no ORM-level tests.
+
+  Migrations (Alembic)        PARTIAL
+    Evidence: alembic.ini, env.py wired to the async engine, one migration that
+    builds the schema, upgrade documented in the deploy steps.
+    Gap: only ONE migration, so the "evolving schema" story is thin. Downgrade
+    paths are untested. A second migration (adding ai_priority or an index)
+    would make this credible.
+
+  Overall roadmap read: 9 of 11 areas covered, 2 partial (Git, Migrations).
+  The two partials are exactly the two that a technical interviewer probes,
+  because they are cheap to fix and reveal whether you understand process, not
+  just syntax.
+
+--------------------------------------------------------------------------------
+5. LENS 2 - FRESHER PLACEMENT READINESS
+--------------------------------------------------------------------------------
+Scored 1-5 per dimension. 5 = would survive a deep technical round on this
+topic. Judgement is for a FRESHER fresher/1-2 yr role, not senior.
+
+  Clean code                     4/5
+    Consistent layering (api -> service -> model), type hints, small functions,
+    meaningful names, no 800-line files. Loses a point for dead code
+    (unmounted Sidebar/ProtectedRoute), duplicate toast/theme systems, and a
+    couple of hardcoded mocks living beside real code.
+
+  Real functionality             4/5
+    This is not a todo-list tutorial. Auth with refresh rotation, role matrix,
+    drag-and-drop with persisted ordering, activity audit trail, an actual
+    external AI integration with fallback. Loses a point because the standup
+    endpoint is broken and real-time is not broadcast.
+
+  Project structure              5/5
+    Three services, clear folders, env templates, Docker for dev and prod,
+    Alembic, seed script, docs folder. This is the strongest dimension and the
+    one that most fresher repos fail badly.
+
+  Database usage                 4/5
+    9 normalised tables, FKs, unique constraints, indexes, enums, cascades.
+    Loses a point because there is a single migration and no query-performance
+    evidence, and no test proves the constraints fire.
+
+  API integration                4/5
+    Internal REST consumed cleanly through one axios client with interceptors,
+    WebSocket handling, NextAuth OAuth, and Groq over httpx with timeout and
+    fallback. Loses a point for the unused socket.io dependency and the broken
+    AI standup contract.
+
+  Deployment                     4/5
+    Docker dev + prod, three independent services, documented env var matrix,
+    Vercel/Render/Neon/Upstash topology, CORS and cookies handled for
+    cross-site, cold-start workaround. Loses a point because live URLs are
+    unverified and there is no CI/CD gate.
+
+  Aggregate: 25/30. For a fresher portfolio this is well above the typical
+  12-18 range, and the gaps are all fixable in a weekend.
+
+  Company-by-company read (fresher hiring bar):
+
+    TCS / Infosys / Wipro / Capgemini / Cognizant / Tech Mahindra
+      These hire on fundamentals plus communication, and the project is a
+      discussion prop rather than the deciding factor. This project is more than
+      enough: you can explain architecture, DB design, and one hard bug you
+      fixed. Focus your prep on the viva-script: definitions, why-not-just-a-
+      todo-app, and the role matrix. Do not over-engineer further; polish the
+      explanation instead.
+      Biggest risk: being unable to explain your own code fluently.
+
+    Accenture
+      Values structured delivery and client-facing clarity. The docs folder and
+      the deployment story help here. Be ready to talk about how you would hand
+      this to another developer: env templates, setup guide, migration steps.
+
+    Flipkart / Paytm / Razorpay (product companies, GCCs)
+      These probe depth. Expect: why async SQLAlchemy, how refresh rotation
+      works, what happens on a duplicate drag, how you would scale the WebSocket
+      layer with Redis pub/sub, why the standup endpoint broke and how you
+      diagnosed it. The honest gaps are fine IF you can propose the fix. Having
+      backend tests and CI (T-07, T-08) is what moves you from "promising" to
+      "already works like an engineer".
+
+  What would move the needle most, in order, for placements:
+    1. T-01 + T-04 + T-03  -> no visibly broken feature in a live demo.
+    2. T-07 + T-08         -> proves engineering discipline; product companies
+                              weight this heavily.
+    3. T-05 + T-06         -> the UI stops looking like separate pages stapled
+                              together.
+    4. T-21                -> screenshots/GIF in the README; recruiters spend
+                              under a minute on a repo.
+    5. T-13                -> docs match reality; interviewers do read the README.
+
+  What NOT to do: add more features (file uploads, chat, billing). Depth on the
+  existing twelve areas beats breadth. Every new surface adds a question you
+  cannot answer.
+
+--------------------------------------------------------------------------------
+6. SUGGESTED ORDER OF WORK (2 WEEKS, PART TIME)
+--------------------------------------------------------------------------------
+  Day 1-2   T-01, T-03, T-04          broken things visible in a demo
+  Day 3     T-13, T-10, T-11          docs and dead links
+  Day 4-6   T-07                      backend tests for the permission matrix
+  Day 7     T-08                      CI workflow + badge
+  Day 8-9   T-05                      dashboard layout and sidebar
+  Day 10-11 T-02                      broadcast + frontend invalidation
+  Day 12    T-12                      remove duplicate toast/theme
+  Day 13    T-06                      real charts
+  Day 14    T-21, T-15, T-16          screenshots, licence, second team
+
+--------------------------------------------------------------------------------
+7. DEFINITION OF DONE (for this project as a portfolio piece)
+--------------------------------------------------------------------------------
+  [ ] No feature in the README is broken or mocked without a label.
+  [ ] A stranger can clone, follow setup-guide.txt, and see the board in
+      under 30 minutes.
+  [ ] Backend tests cover auth and the permission matrix.
+  [ ] CI is green on the default branch.
+  [ ] Two tabs sync after a drag.
+  [ ] Dashboard charts move when data changes.
+  [ ] Every link in the UI resolves to a real page.
+  [ ] Docs match the schema and the demo credentials.
+  [ ] README has 2+ screenshots and the live URL.
+================================================================================

@@ -1,0 +1,164 @@
+================================================================================
+TEAMPULSE - PROJECT OVERVIEW (2 PAGE SUMMARY)
+================================================================================
+Last updated: 18 November 2026
+Repository   : https://github.com/laxtline/TeamPulse
+Local path   : D:\Projects\On Working Projects\TeamPulse\teampulse
+Owner profile: MCA fresher targeting service companies and product/GCC roles
+
+--------------------------------------------------------------------------------
+1. ONE-LINE PITCH
+--------------------------------------------------------------------------------
+TeamPulse is a full-stack team collaboration app where a team can create
+projects, manage work on a drag-and-drop Kanban board, comment on tasks, and ask
+an AI service for a daily standup summary and a task priority score.
+
+Stack: Next.js 14 + TypeScript + Tailwind + TanStack Query on the frontend,
+FastAPI + SQLAlchemy 2.0 (async) + PostgreSQL + Redis on the backend, and a
+separate FastAPI microservice that calls Groq (Llama 3.3 70B).
+
+--------------------------------------------------------------------------------
+2. THE PROBLEM
+--------------------------------------------------------------------------------
+Student teams and small squads usually coordinate in chat plus a spreadsheet.
+That creates three problems:
+  - nobody knows the real status of a task without asking;
+  - work is invisible until someone remembers to post an update;
+  - prioritisation is gut feeling, not based on due dates or workload.
+
+TeamPulse keeps the work in one place and adds two small AI helpers that turn
+activity into a summary and a priority score.
+
+--------------------------------------------------------------------------------
+3. WHAT THE APP DOES
+--------------------------------------------------------------------------------
+Accounts
+  - Email + password registration and login.
+  - Google and GitHub OAuth through NextAuth.
+  - Short-lived JWT access token (15 min) and rotating refresh token (7 days).
+  - httpOnly cookies, plus a Bearer fallback for cross-site production hosting.
+
+Teams
+  - Create a team; the creator becomes owner.
+  - Invite an existing registered user by email.
+  - Roles: owner > admin > member > viewer, enforced on the server.
+  - Remove members; change roles (with owner/admin rules).
+
+Projects
+  - Projects inside a team, each with a short key prefix (WEB, MOB, API).
+  - Project detail includes total and per-status task counts.
+
+Tasks and Kanban
+  - Five columns: Backlog, To Do, In Progress, Review, Done.
+  - Create, edit, drag, assign, delete tasks.
+  - Fields: title, description, status, priority, assignee, reporter, story
+    points, due date, float position.
+  - Task detail page with comments, activity log and AI priority.
+
+Collaboration
+  - Comments with author-only edit and author/admin delete.
+  - Activity rows for created / moved / updated / assigned / commented /
+    deleted actions, with old/new JSON snapshots.
+
+AI
+  - Task priority score 1-10 with reasoning and an action (Do now / Schedule this
+    week / Delegate / Defer).
+  - Standup summary plus three priorities.
+  - Both have local heuristic fallbacks, so the app works without an API key.
+
+--------------------------------------------------------------------------------
+4. ARCHITECTURE AT A GLANCE
+--------------------------------------------------------------------------------
+  Browser (Next.js 14, App Router)
+      |  REST /api/v1  +  WebSocket /api/v1/ws/...
+      v
+  FastAPI backend (:8000)
+      |-- PostgreSQL 16 (users, teams, projects, tasks, comments, activity,
+      |                  refresh tokens, OAuth accounts)
+      |-- Redis 7 (rate limiting, pub/sub channels)
+      |-- FastAPI AI service (:8001) -> Groq API
+  Deployment (documented): Vercel + Render + Neon + Upstash + cron-job.org.
+
+--------------------------------------------------------------------------------
+5. WHAT IS GENUINELY WORKING
+--------------------------------------------------------------------------------
+  - Register, login, logout, session refresh, OAuth exchange.
+  - Team creation, invitations, role changes, member removal.
+  - Project creation and listing.
+  - Task CRUD, drag between columns with persisted status/position.
+  - Comments CRUD and activity logging.
+  - AI priority scoring through the microservice (or heuristic fallback).
+  - Theme switching, profile update, password change.
+  - Frontend unit tests (Button, Card, api, utils) and Playwright specs.
+  - Docker Compose dev stack, production Dockerfiles, Alembic migration.
+
+--------------------------------------------------------------------------------
+6. WHAT IS MOCK, PARTIAL OR BROKEN (BE HONEST)
+--------------------------------------------------------------------------------
+  MOCK
+  - Dashboard velocity chart: five hard-coded sprint rows.
+  - Dashboard workload chart: three hard-coded people.
+  - Settings notification preferences: localStorage only.
+
+  PARTIAL
+  - Real-time board sync: sockets connect and presence works, but no service
+    calls manager.publish_event(), so task/comment changes are not broadcast.
+  - Assignee dropdown in the task modal is always empty because the board does
+    not pass team members.
+  - AI priority score is displayed but not saved (ai_priority is always null).
+  - Team settings save/delete buttons are not wired.
+  - Delete Account button is not wired.
+  - Forgot/reset password endpoints exist but do not send email.
+  - AI project insights endpoint returns an empty stub.
+
+  BROKEN
+  - POST /api/v1/ai/my-standup: requires `date` as a query parameter while the
+    frontend sends it in the body (422), imports app.models.activity which does
+    not exist (500), and passes a user id where a task id is expected.
+    Result: the dashboard "Today's Standup" card cannot load.
+  - Project page links to /analytics and /settings routes that do not exist.
+
+  MISSING
+  - No dashboard layout: Sidebar, Navbar and ProtectedRoute are built but not
+    mounted anywhere.
+  - No CI workflow, no backend tests, no LICENSE file.
+
+--------------------------------------------------------------------------------
+7. NUMBERS YOU CAN QUOTE SAFELY
+--------------------------------------------------------------------------------
+  - 3 deployable services (frontend, backend, AI).
+  - 9 database tables, 1 Alembic migration, 19 indexes/constraints.
+  - 31 REST route declarations + 2 WebSocket routes.
+  - 151 application files before this documentation set.
+  - 26 seeded tasks across 3 projects, 4 demo users.
+  - 4 frontend unit test files, 3 Playwright specs.
+
+--------------------------------------------------------------------------------
+8. DEMO
+--------------------------------------------------------------------------------
+  Local frontend: http://localhost:3000
+  Local API docs: http://localhost:8000/docs
+  Demo login    : arjun@teampulse.ac / Passcode@9938
+  Other users   : priya@teampulse.ac, rohan@teampulse.ac, admin@teampulse.ac
+                  (same password)
+  Seed data     : team "Acme Corp", projects WEB / MOB / API, 26 tasks.
+
+  Production URLs (documented, verify before sharing):
+    https://teampulse.vercel.app
+    https://teampulse-api.onrender.com/health
+
+--------------------------------------------------------------------------------
+9. WHY THIS PROJECT IS USEFUL IN PLACEMENTS
+--------------------------------------------------------------------------------
+  It is not another todo list. It shows:
+  - a real multi-service architecture with a clear separation of concerns;
+  - authentication done properly (hashing, JWT types, refresh rotation, OAuth);
+  - relational data modelling with constraints and indexes;
+  - a non-trivial UI feature (drag-and-drop with persisted ordering);
+  - an external API integration with timeout and fallback handling;
+  - deployment awareness (Docker, environment variables, CORS, CSP, cold start).
+
+  It also has visible gaps, which is normal for a fresher project. Being able
+  to explain the gaps and the fix plan is often more impressive than claiming
+  everything is perfect.
+================================================================================

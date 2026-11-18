@@ -101,6 +101,10 @@ export const authApi = {
   updateProfile: (data: { full_name: string }) => payload<User>(api.patch('/auth/me', data)),
   changePassword: (data: { current_password: string; new_password: string }) =>
     payload<{ message: string }>(api.post('/auth/change-password', data)),
+  forgotPassword: (data: { email: string }) =>
+    payload<{ message: string }>(api.post('/auth/forgot-password', data)),
+  resetPassword: (data: { token: string; new_password: string }) =>
+    payload<{ message: string }>(api.post('/auth/reset-password', data)),
 }
 
 export const teamsApi = {

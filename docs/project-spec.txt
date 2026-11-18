@@ -1,0 +1,420 @@
+================================================================================
+TEAMPULSE - PROJECT SPECIFICATION
+================================================================================
+Version      : 1.0 (as built)
+Last updated : 18 November 2026
+Repo         : https://github.com/laxtline/TeamPulse
+Local root   : D:\Projects\On Working Projects\TeamPulse\teampulse
+
+This document describes what the system is supposed to do, how it is built, and
+what is verified versus what is still open. It is the "contract" version of the
+project: if code and this file disagree, the file is what we intend to fix code
+to match.
+
+--------------------------------------------------------------------------------
+1. PROBLEM STATEMENT
+--------------------------------------------------------------------------------
+Small teams (student projects, early-stage squads, 3-10 people) track work in
+chat plus a spreadsheet. Consequences:
+
+  P1  Task status is only known by asking someone.
+  P2  Work history disappears when the chat scrolls.
+  P3  Prioritisation is gut feel: nobody compares due dates and workload.
+  P4  Onboarding a new member means explaining everything verbally.
+
+Goal: one place where tasks live, change history is automatic, and priority is
+suggested from data rather than opinion.
+
+Non-goals (explicitly out of scope for v1):
+  - Enterprise features: SSO/SAML, audit export, compliance reporting.
+  - Billing, subscriptions, invoicing.
+  - Mobile native apps.
+  - File attachments and rich-text editing.
+  - Notifications by email or push.
+
+--------------------------------------------------------------------------------
+2. USERS AND ROLES
+--------------------------------------------------------------------------------
+2.1 Personas
+  Member     does the work; moves cards, comments
+  Lead       manages a project, assigns and reviews
+  Owner      created the team, controls membership
+  Viewer     stakeholder who only reads
+
+2.2 Role matrix (enforced server-side)
+
+  Action                        owner  admin  member  viewer
+  ---------------------------------------------------------------
+  View team, projects, tasks     yes    yes    yes     yes
+  Create/edit/delete task        yes    yes    yes     no
+  Move task on board             yes    yes    yes     no
+  Comment                        yes    yes    yes     no
+  Edit own comment               yes    yes    yes     no
+  Delete any comment             yes    yes    no      no
+  Invite / remove member         yes    yes    no      no
+  Change member role             yes    yes*   no      no
+  Create / edit project          yes    yes    yes     no
+  Delete project                 yes    yes    no      no
+  Delete team                    yes    no     no      no
+  Request AI priority            yes    yes    yes     yes (read)
+
+  * an admin cannot promote anyone to owner or demote the current owner.
+
+2.3 Rules
+  R1  A team must always have at least one owner.
+  R2  Only the comment author may edit their comment.
+  R3  A user may belong to multiple teams.
+  R4  Project keys are unique per team, 2-5 uppercase alphanumeric characters.
+  R5  Tasks belong to exactly one project and have exactly one reporter.
+  R6  An assignee may be null (unassigned).
+
+--------------------------------------------------------------------------------
+3. FUNCTIONAL REQUIREMENTS
+--------------------------------------------------------------------------------
+FR-01  Registration with name, email, password; email unique; password hashed
+       with bcrypt; minimum 8 characters.
+FR-02  Login with email + password; returns access + refresh token.
+FR-03  OAuth login with Google and GitHub, exchanging a verified profile for the
+       same internal token pair.
+FR-04  Access token 15 minutes, refresh token 7 days, rotated on use; a used
+       refresh token is revoked.
+FR-05  Logout revokes the refresh token and clears cookies.
+FR-06  Authenticated requests accepted via httpOnly cookie or Bearer header.
+FR-07  Create team; creator becomes owner.
+FR-08  Invite an existing registered user by email.
+FR-09  Change a member's role, respecting R1 and the admin limits.
+FR-10  Remove a member from a team.
+FR-11  Create, list, update, delete projects inside a team.
+FR-12  Project detail includes task counts overall and per status.
+FR-13  Create, read, update, delete tasks.
+FR-14  Move a task to a different status and persist its position.
+FR-15  Assign a task to a team member; reassignment is recorded.
+FR-16  Write, edit and delete comments on a task.
+FR-17  Record an activity row for created / updated / status-changed / assigned /
+       commented / deleted, with old and new values.
+FR-18  AI priority: score 1-10, reason, action; graceful fallback when the AI
+       service or key is unavailable.
+FR-19  AI standup: summary plus three priorities for a given date.
+FR-20  WebSocket channel per project for presence and live updates.
+
+Status of each requirement (honest):
+  FR-01..FR-06  WORKING
+  FR-07..FR-10  WORKING (team settings UI buttons not wired: PARTIAL at UI level)
+  FR-11..FR-12  WORKING
+  FR-13..FR-15  WORKING (assignee dropdown in the create modal can be empty)
+  FR-16         WORKING
+  FR-17         WORKING
+  FR-18         WORKING, except the score is not persisted
+  FR-19         BROKEN at /api/v1/ai/my-standup (contract mismatch + bad import)
+  FR-20         PARTIAL: connection and presence work, task/comment broadcast
+                is never emitted
+
+--------------------------------------------------------------------------------
+4. NON-FUNCTIONAL REQUIREMENTS
+--------------------------------------------------------------------------------
+NFR-01  API responds under 300 ms at p95 for list endpoints with seed-sized data.
+NFR-02  All passwords stored with bcrypt; no plaintext, no reversible encoding.
+NFR-03  All input validated by Pydantic schemas; 422 on invalid body.
+NFR-04  Authorization enforced in the service layer, not only in the UI.
+NFR-05  Database access is async (SQLAlchemy 2.0 + asyncpg), no blocking calls
+        inside request handlers.
+NFR-06  Every table has created_at; mutable rows have updated_at.
+NFR-07  Foreign keys with explicit on-delete behaviour; 19 indexes/constraints
+        exist across the schema.
+NFR-08  CORS restricted to configured origins; security headers set by Next.js.
+NFR-09  Secrets only from environment variables; .env gitignored.
+NFR-10  Three services independently deployable; each exposes a health endpoint.
+NFR-11  UI usable at 1280x720 and 1920x1080; keyboard focus visible.
+NFR-12  Graceful degradation: AI unreachable -> heuristic result; Redis
+        unreachable -> app still serves, rate limiting disabled.
+
+--------------------------------------------------------------------------------
+5. SYSTEM ARCHITECTURE
+--------------------------------------------------------------------------------
+5.1 Services
+
+  +-------------------+        REST /api/v1        +----------------------+
+  |  Frontend         |  ----------------------->  |  Backend             |
+  |  Next.js 14       |        WebSocket /ws       |  FastAPI             |
+  |  :3000            |  <-----------------------  |  :8000               |
+  +-------------------+                            +----+--------+--------+
+                                                        |        |
+                                     asyncpg / SQLAlchemy|        | httpx
+                                                        v        v
+                                              +-----------+  +----------------+
+                                              |PostgreSQL |  | AI service     |
+                                              |   16      |  | FastAPI :8001  |
+                                              +-----------+  +-------+--------+
+                                                                     |
+                                              +-----------+          | https
+                                              |  Redis 7  |          v
+                                              | rate + pub|   +-------------+
+                                              +-----------+   |  Groq API   |
+                                                              | Llama 3.3   |
+                                                              +-------------+
+
+5.2 Why three services instead of one
+  - AI calls are slow and can fail. Isolating them keeps the request path for
+    normal CRUD fast and keeps failures contained.
+  - The AI service has a different dependency set (Groq client) and can be
+    scaled or replaced independently.
+  - It also makes a clean deployment story on free tiers.
+
+5.3 Backend layering
+  api/v1/*        routers: parse request, call a service, return a schema
+  services/*      business rules, authorization checks, transactions
+  models/*        SQLAlchemy ORM tables and relationships
+  schemas/*       Pydantic request/response contracts
+  core/*          config, security, database session, dependencies
+  db/             base classes, session factory, session helpers
+
+  Rule: routers never touch the ORM directly; services never build HTTP
+  responses. This is what makes the code testable and explains well in an
+  interview.
+
+5.4 Frontend layering
+  app/            routes (App Router), one folder per URL segment
+  components/     ui primitives, layout, feature components (board, task, team)
+  lib/            api client, auth helpers, utils
+  hooks/          TanStack Query hooks and the WebSocket hook
+  store/          Zustand stores (auth, ui/theme)
+  types/          shared TypeScript types
+
+--------------------------------------------------------------------------------
+6. DATA MODEL
+--------------------------------------------------------------------------------
+9 tables.
+
+  users            id, email (unique), hashed_password, full_name, avatar_url,
+                   is_active, created_at, updated_at
+  oauth_accounts   id, user_id FK, provider, provider_account_id, (unique pair)
+  refresh_tokens   id, user_id FK, token (hashed), expires_at, revoked
+  teams            id, name, owner_id FK, created_at, updated_at
+  team_members     id, team_id FK, user_id FK, role enum, joined_at
+                   (unique on team_id + user_id)
+  projects         id, team_id FK, name, key, description, created_at, updated_at
+  tasks            id, project_id FK, title, description, status, priority,
+                   assignee_id FK, reporter_id FK, story_points, due_date,
+                   position, ai_priority, created_at, updated_at
+  comments         id, task_id FK, author_id FK, content, created_at, updated_at
+  activities       id, task_id FK, user_id FK, action, old_value, new_value,
+                   created_at
+
+  Enums
+    role      owner | admin | member | viewer
+    status    backlog | todo | in_progress | review | done
+    priority  low | medium | high | urgent
+
+  Relationship summary
+    user 1--N team_members N--1 team
+    team 1--N projects 1--N tasks
+    task 1--N comments
+    task 1--N activities
+    user 1--N refresh_tokens, 1--N oauth_accounts
+
+  Note: backend/README.md says 7 tables. That is out of date; the code defines 9.
+
+--------------------------------------------------------------------------------
+7. API SURFACE
+--------------------------------------------------------------------------------
+Base path: /api/v1. 31 REST route declarations + 2 WebSocket routes.
+
+  auth
+    POST /auth/register
+    POST /auth/login
+    POST /auth/logout
+    POST /auth/refresh
+    POST /auth/oauth/callback
+    GET  /auth/me
+    POST /auth/forgot-password        (no mail provider wired)
+    POST /auth/reset-password
+
+  users
+    GET  /users/me
+    PATCH /users/me
+    POST /users/me/change-password
+
+  teams
+    POST /teams
+    GET  /teams
+    GET  /teams/{team_id}
+    PATCH /teams/{team_id}
+    DELETE /teams/{team_id}
+    POST /teams/{team_id}/members
+    GET  /teams/{team_id}/members
+    PATCH /teams/{team_id}/members/{user_id}
+    DELETE /teams/{team_id}/members/{user_id}
+
+  projects
+    POST /projects
+    GET  /projects
+    GET  /projects/{project_id}
+    PATCH /projects/{project_id}
+    DELETE /projects/{project_id}
+
+  tasks
+    POST /tasks
+    GET  /tasks
+    GET  /tasks/{task_id}
+    PATCH /tasks/{task_id}
+    DELETE /tasks/{task_id}
+    PATCH /tasks/{task_id}/move
+    GET  /tasks/{task_id}/comments
+    POST /tasks/{task_id}/comments
+    PATCH /comments/{comment_id}
+    DELETE /comments/{comment_id}
+    GET  /tasks/{task_id}/activities
+
+  ai
+    POST /ai/priority
+    POST /ai/my-standup               BROKEN
+    GET  /ai/project-insights         stub, returns empty
+
+  websocket
+    WS /ws/projects/{project_id}
+    WS /ws/notifications
+
+  Conventions
+    errors: {"detail": "message"} with 400/401/403/404/409/422/429
+    auth  : Bearer token or httpOnly cookie
+    paging: not implemented; lists are returned whole (fine at seed scale)
+
+--------------------------------------------------------------------------------
+8. AI BEHAVIOUR
+--------------------------------------------------------------------------------
+8.1 Priority endpoint
+  Input : task id or task fields
+  Prompt: title, description, priority, due date, status, days overdue
+  Output: { score: 1-10, reason: string, action: string }
+  Fallback: local heuristic (base by priority, +points for overdue, +for status)
+
+8.2 Standup endpoint (BROKEN)
+  Intended: given a user and date, summarise the last day's activity, return a
+  summary and three priorities.
+  Actual: date is required as a query parameter while the client sends it in the
+  body -> 422. The module imports app.models.activity which does not exist ->
+  500. A user id is passed where the activity service expects a task id.
+  Fix plan is in remaining-tasks.txt.
+
+8.3 Failure handling
+  Timeout on the outbound call, then fallback. No retry storm. The frontend shows
+  a normal result and never blocks on the AI service.
+
+8.4 Cost
+  Groq free tier, rate limited. Prompts are short by design.
+
+--------------------------------------------------------------------------------
+9. REAL-TIME
+--------------------------------------------------------------------------------
+Design: one WebSocket per project, plus a notifications socket.
+  - Client connects with the access token in the query string.
+  - Server authenticates, registers the connection, and on connect sends
+    presence (who is online).
+  - A ConnectionManager holds rooms and can publish events.
+
+Actual state: PARTIAL.
+  - Connection, authentication and presence work.
+  - manager.publish_event() is never called by any service. Task created, task
+    moved and comment added do not broadcast. So two browsers do not sync.
+  - Redis pub/sub is available for multi-instance fan-out but is not used by the
+    event path.
+
+--------------------------------------------------------------------------------
+10. DEPLOYMENT TOPOLOGY (DOCUMENTED)
+--------------------------------------------------------------------------------
+  Frontend  Vercel        https://teampulse.vercel.app
+  Backend   Render        https://teampulse-api.onrender.com
+  AI        Render        https://teampulse-ai.onrender.com   (per deployment
+                          docs; confirm the exact hostname)
+  Database  Neon          postgres 16, asyncpg driver
+  Redis     Upstash       rediss:// TLS
+  Uptime    cron-job.org  pings /health every 10 minutes
+
+  Live status: NOT VERIFIED - please fill in (check before sharing the links).
+
+  Local equivalent: docker compose up, five services, same ports as section 5.1.
+
+--------------------------------------------------------------------------------
+11. SECURITY
+--------------------------------------------------------------------------------
+  Implemented
+    - bcrypt password hashing; passwords never returned in any response
+    - JWT with separate token types; short access lifetime; refresh rotation
+    - Refresh token revocation on logout and on reuse
+    - Authorization checks in the service layer
+    - Pydantic validation on all bodies
+    - CORS allow-list from env
+    - Security headers via next.config.js (CSP, frame options, referrer policy)
+    - httpOnly cookies with Secure/SameSite in production
+    - Secrets only from env; .env gitignored
+    - SQL injection not possible through the ORM query layer
+
+  Known gaps
+    - Rate limiting depends on Redis; if Redis is down, limits are skipped
+    - No CSRF token (mitigated by SameSite + Bearer fallback, not eliminated)
+    - No account lockout after repeated failed logins
+    - No email verification
+    - Demo accounts with a published password exist in the seed script
+    - No dependency scanning or SAST in CI
+
+--------------------------------------------------------------------------------
+12. TESTING STRATEGY
+--------------------------------------------------------------------------------
+  Implemented
+    - Frontend unit tests: Button, Card, api client, utils (4 files, vitest)
+    - Playwright specs: 3 (auth, board, task flows)
+    - Manual test pass documented via the demo script
+
+  Missing
+    - Backend test suite: folders exist, zero tests
+    - No integration tests against a real database
+    - No CI workflow (.github/workflows is empty)
+    - No coverage reporting
+    - No load testing
+
+  Target for v1.1
+    - pytest + httpx AsyncClient covering auth, teams, tasks, permissions
+    - CI: install, lint, unit tests on push
+    - Coverage gate at 60% for backend services
+
+--------------------------------------------------------------------------------
+13. ACCEPTANCE CRITERIA FOR v1.0
+--------------------------------------------------------------------------------
+  A1  A new user can register, log in, and stay logged in across a refresh.
+  A2  A user can create a team, invite an existing user, and see them listed.
+  A3  A user can create a project and a task inside it.
+  A4  Dragging a task changes status and survives a page reload.
+  A5  A comment appears immediately and creates an activity row.
+  A6  AI priority returns a score with reason and action, and still returns
+      something when the AI service is stopped.
+  A7  Unauthorized actions return 403, not a silent success.
+  A8  The three services start from a clean checkout with documented steps.
+
+  A1-A8 are met, with two caveats: A6 returns the score but does not persist it,
+  and the standup card (not part of A1-A8) is broken.
+
+--------------------------------------------------------------------------------
+14. ROADMAP
+--------------------------------------------------------------------------------
+  v1.0  current: auth, teams, projects, tasks, board, comments, activity,
+        AI priority with fallback, Docker, deploy docs.
+  v1.1  fix standup endpoint; persist ai_priority; broadcast task/comment events;
+        add dashboard layout with sidebar; pass members into the task modal;
+        wire team settings and delete account.
+  v1.2  backend tests + CI; pagination and filtering; replace mock charts with
+        real aggregates; email for password reset.
+  v2.0  attachments, notifications, multi-team switcher, audit export.
+
+--------------------------------------------------------------------------------
+15. GLOSSARY
+--------------------------------------------------------------------------------
+  JWT             signed token proving who you are
+  refresh token   long-lived token used to get a new access token
+  ORM             library that maps Python classes to database tables
+  migration       versioned change to the database schema
+  async           non-blocking I/O; one worker can serve many requests
+  CORS            browser rule about which origins may call the API
+  WebSocket       two-way connection kept open for live updates
+  idempotent      safe to repeat without changing the result
+  fallback        simpler behaviour used when the preferred path fails
+================================================================================

@@ -1,0 +1,385 @@
+================================================================================
+TEAMPULSE - LOCALLY KAISE RUN KARE (HINGLISH, STEP BY STEP)
+================================================================================
+Last updated: 18 November 2026
+Bhai/behen, agar tu pehli baar is project ko chala raha hai, to ye file top se
+neeche padh. Har step ke baad "check" diya hai - wahan ruk kar confirm kar,
+aage badhne se pehle. Isse debugging 10x aasan ho jayegi.
+
+Main setup: Windows 10/11 + PowerShell. Linux/Mac ke liye chhote notes diye hain.
+
+--------------------------------------------------------------------------------
+0. PEHLE SAMAJH LE - KYA KYA CHALANA HAI
+--------------------------------------------------------------------------------
+Is project me 3 app chalte hain aur 2 data service:
+
+  1. frontend    Next.js       -> http://localhost:3000   (UI)
+  2. backend     FastAPI       -> http://localhost:8000   (API)
+  3. ai-service  FastAPI       -> http://localhost:8001   (Groq AI)
+  4. PostgreSQL  database      -> port 5432
+  5. Redis       cache/pubsub  -> port 6379
+
+5 cheezein manually chalana painful hai, isliye hum Postgres + Redis ko Docker
+se chalayenge aur 3 apps ko terminal me (taaki code change pe fast reload ho).
+
+--------------------------------------------------------------------------------
+1. TOOLS INSTALL KAR
+--------------------------------------------------------------------------------
+1.1 Git
+    https://git-scm.com/download/win
+    Check:  git --version
+
+1.2 Python 3.11 ya 3.12  (3.13 mat lo, kuch packages late support karte hain)
+    https://www.python.org/downloads/
+    Install karte waqt "Add python.exe to PATH" ka tick lagana mat bhoolna.
+    Check:  python --version
+
+1.3 Node.js 18 LTS ya 20 LTS  (21+ pe kabhi kabhi build issue aata hai)
+    https://nodejs.org/
+    Check:  node --version
+            npm --version
+
+1.4 Docker Desktop  (sirf database ke liye, baaki native chalayenge)
+    https://www.docker.com/products/docker-desktop/
+    Install ke baad Docker Desktop kholo aur "Engine running" hone tak wait karo.
+    Check:  docker --version
+            docker compose version
+
+    Docker nahi chahiye? To PostgreSQL 16 alag se install kar:
+    https://www.postgresql.org/download/windows/
+    Wahan superuser password yaad rakhna. Redis Windows pe aasan nahi hai -
+    Memurai ya WSL2 use kar, warna Redis skip kar de (backend warning dega,
+    phir bhi chalega).
+
+--------------------------------------------------------------------------------
+2. CODE LE AAO
+--------------------------------------------------------------------------------
+  git clone https://github.com/laxtline/TeamPulse.git
+  cd TeamPulse\teampulse
+
+  DHYAN DE: git repo "teampulse" folder ke andar hai, bahar wale TeamPulse
+  folder me nahi. Agar "git status" pe "not a git repository" aaye to tu ek
+  level upar hai.
+
+  Ab ye folders dikhne chahiye:
+    backend\   frontend\   ai-service\   docs\   docker-compose.yml
+
+--------------------------------------------------------------------------------
+3. DATABASE + REDIS START KAR (sabse aasan tarika)
+--------------------------------------------------------------------------------
+  teampulse\ folder ke andar se:
+
+    docker compose up -d postgres redis
+
+  Agar service name alag ho to pehle list dekh le:
+    docker compose config --services
+
+  Check:
+    docker ps
+    Do container "Up" dikhne chahiye - ek postgres, ek redis.
+
+  Alternative (bilkul Docker nahi chahiye):
+    pgAdmin ya psql me database banao:
+      CREATE DATABASE teampulse;
+    Phir connection string:
+      postgresql+asyncpg://postgres:TERA_PASSWORD@localhost:5432/teampulse
+
+--------------------------------------------------------------------------------
+4. BACKEND KA .env BANA
+--------------------------------------------------------------------------------
+4.1 Template se copy kar:
+
+    copy backend\.env.example backend\.env
+
+4.2 backend\.env kholo aur ye values daal (ye LOCAL dev ke liye safe hain):
+
+    ENVIRONMENT=development
+    DEBUG=true
+    SECRET_KEY=dev-only-change-me-please-32-chars-min
+    ALGORITHM=HS256
+    ACCESS_TOKEN_EXPIRE_MINUTES=15
+    REFRESH_TOKEN_EXPIRE_DAYS=7
+
+    DATABASE_URL=postgresql+asyncpg://postgres:TERA_PASSWORD@localhost:5432/teampulse
+    REDIS_URL=redis://localhost:6379/0
+
+    AI_SERVICE_URL=http://localhost:8001
+    CORS_ORIGINS=http://localhost:3000
+    FRONTEND_URL=http://localhost:3000
+
+    GOOGLE_CLIENT_ID=
+    GOOGLE_CLIENT_SECRET=
+    GITHUB_CLIENT_ID=
+    GITHUB_CLIENT_SECRET=
+
+4.3 Yahan log galti karte hain:
+
+    - DATABASE_URL me "+asyncpg" hona zaroori hai. Sirf "postgresql://" likha to
+      app crash karega, kyunki app async driver use karta hai.
+    - Password me @ ya # ho to URL-encode karo (@ -> %40).
+    - Values ke around quotes mat lagana, aur end me space mat chhodna.
+    - OAuth khali chhod sakte ho - email/password login kaam karega.
+
+  Check: backend\.env "git status" me nahi dikhna chahiye (gitignored hai).
+
+--------------------------------------------------------------------------------
+5. BACKEND CHALA
+--------------------------------------------------------------------------------
+5.1 Virtual environment banao:
+
+    cd backend
+    python -m venv .venv
+
+5.2 Activate karo (PowerShell):
+
+    .\.venv\Scripts\Activate.ps1
+
+    Agar PowerShell "execution policy" error de, to ek baar ye chala:
+      Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+    phir dobara activate kar.
+
+    (cmd user:  .\.venv\Scripts\activate.bat
+     Linux/Mac:  source .venv/bin/activate)
+
+5.3 Packages install:
+
+    pip install --upgrade pip
+    pip install -r requirements.txt
+
+5.4 Database ki tables banao:
+
+    alembic upgrade head
+
+    Expected: kuch "Running upgrade ..." lines aur end me "Done".
+    Agar "Target database is not up to date" ya connection error aaye to
+    DATABASE_URL galat hai - pehle wo theek kar.
+
+5.5 Demo data daal:
+
+    python scripts\seed.py
+
+    Ye 4 users, team "Acme Corp", 3 projects (WEB/MOB/API) aur 26 tasks daalta
+    hai. Do baar chalane pe duplicate ya unique-constraint error aa sakta hai -
+    us case me data pehle se hai, tension mat le.
+
+5.6 API start kar:
+
+    uvicorn app.main:app --reload --port 8000
+
+    Dikhega:
+      INFO:     Uvicorn running on http://127.0.0.1:8000
+      INFO:     Application startup complete.
+
+5.7 Browser me check:
+
+    http://localhost:8000/health    -> ok JSON
+    http://localhost:8000/docs      -> Swagger UI, saare routes
+
+    Agar /docs khulta hai par /health fail hota hai, to 99% database connection
+    ka issue hai.
+
+--------------------------------------------------------------------------------
+6. AI SERVICE CHALA (naya terminal)
+--------------------------------------------------------------------------------
+6.1
+
+    cd teampulse\ai-service
+    python -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    pip install -r requirements.txt
+
+6.2 Env file banao:
+
+    copy .env.example .env
+
+6.3 Isme daal:
+
+    GROQ_API_KEY=                  <-- khali chhod de to bhi chalega
+    GROQ_MODEL=llama-3.3-70b-versatile
+    ALLOWED_ORIGINS=http://localhost:3000
+    PORT=8001
+    REQUEST_TIMEOUT_SECONDS=20
+
+    Key khali ho to service local heuristic se answer degi. Ye jaan-boojh kar
+    banaya gaya hai taaki demo kabhi na toote.
+
+6.4 Start:
+
+    uvicorn main:app --reload --port 8001
+
+    (Module ka naam main na ho to file dekh kar adjust kar.)
+
+  Check: http://localhost:8001/health -> 200, aur /docs khule.
+
+--------------------------------------------------------------------------------
+7. FRONTEND CHALA (teesra terminal)
+--------------------------------------------------------------------------------
+7.1 Env file:
+
+    cd ..\frontend
+    copy .env.local.example .env.local
+
+    Agar example file na mile to .env.local khud bana aur ye daal:
+
+    NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+    NEXT_PUBLIC_WS_URL=ws://localhost:8000/api/v1
+    NEXT_PUBLIC_APP_URL=http://localhost:3000
+    NEXTAUTH_URL=http://localhost:3000
+    NEXTAUTH_SECRET=dev-secret-change-me
+    GOOGLE_CLIENT_ID=
+    GOOGLE_CLIENT_SECRET=
+    GITHUB_CLIENT_ID=
+    GITHUB_CLIENT_SECRET=
+
+7.2 Install:
+
+    npm install
+
+7.3 Start:
+
+    npm run dev
+
+  Check: "ready - started server on 0.0.0.0:3000", aur http://localhost:3000
+  pe landing page khule.
+
+7.4 Login kar:
+
+    arjun@teampulse.ac / Passcode@9938
+
+  Baaki users: priya@teampulse.ac, rohan@teampulse.ac, admin@teampulse.ac
+  (password same).
+
+  Agar bar-bar /login pe redirect ho raha hai, to NEXT_PUBLIC_API_URL galat hai
+  ya backend band hai. DevTools > Network me failing request dekh.
+
+--------------------------------------------------------------------------------
+8. EK HI COMMAND WALA TARIKA (Docker Compose)
+--------------------------------------------------------------------------------
+  Agar Docker theek chal raha hai, to section 3-7 skip kar sakte ho:
+
+    cd teampulse
+    docker compose up --build
+
+  Fir 5 services up hone ka wait kar:
+    frontend    http://localhost:3000
+    backend     http://localhost:8000/docs
+    ai-service  http://localhost:8001/docs
+
+  Migration aur seed ek baar container ke andar chalana padega:
+
+    docker compose exec backend alembic upgrade head
+    docker compose exec backend python scripts/seed.py
+
+  Band karna: Ctrl+C, phir
+    docker compose down
+  (-v SIRF tab lagana jab database bhi delete karna ho.)
+
+  Nuksan: start fast hai, par har code change pe rebuild slow lagta hai. Isliye
+  best combo = Postgres+Redis Docker me, apps native.
+
+--------------------------------------------------------------------------------
+9. MINIMAL SETUP (agar AI nahi chahiye)
+--------------------------------------------------------------------------------
+  - Docker: sirf postgres + redis
+  - backend: uvicorn
+  - frontend: npm run dev
+  - ai-service: skip
+
+  AI service band ho to bhi backend heuristic fallback deta hai, isliye priority
+  score dikhta rahega. Sirf Groq wala asli AI answer nahi milega.
+
+--------------------------------------------------------------------------------
+10. SAB KUCH BAND KAISE KARE
+--------------------------------------------------------------------------------
+  Terminal 1 (frontend): Ctrl+C
+  Terminal 2 (backend):  Ctrl+C
+  Terminal 3 (ai):       Ctrl+C
+
+  Docker:
+    docker compose down        (data safe rahega)
+    docker compose down -v     (data bhi delete - soch samajh ke)
+
+  Virtual env deactivate:
+    deactivate
+
+--------------------------------------------------------------------------------
+11. SABSE COMMON ERRORS AUR FIX
+--------------------------------------------------------------------------------
+  "uvicorn: command not found"
+    Venv activate nahi hua. Activate karke dobara try kar.
+
+  "asyncpg.exceptions.InvalidPasswordError"
+    DATABASE_URL me password galat hai, ya special character encode nahi kiya.
+
+  "connection refused" (5432)
+    Postgres band hai. Docker Desktop start kar ya Windows service chalu kar.
+
+  "Cannot connect to Redis"
+    Redis band hai. Sirf rate limiting affect hogi, baaki app chalega.
+
+  "ModuleNotFoundError: No module named 'app'"
+    uvicorn galat folder se chala. backend\ ke andar se chalana hai.
+
+  "next: command not found" / "missing script: dev"
+    frontend\ ke andar nahi hai, ya npm install adhura hai.
+
+  CORS error browser me
+    backend\.env me CORS_ORIGINS exactly http://localhost:3000 hona chahiye.
+
+  Login ke turant baad logout
+    Token refresh fail ho raha hai. Network tab me /auth/refresh dekh aur
+    backend log padh.
+
+  "Today's Standup" card error
+    Ye known bug hai (/api/v1/ai/my-standup). Setup ka issue nahi hai. Fix list
+    remaining-tasks.txt me hai.
+
+  Port already in use (8000/3000)
+    netstat -ano | findstr :8000
+    taskkill /PID <pid> /F
+    Ya dusra port use kar aur env me URL update kar.
+
+  PowerShell script blocked
+    Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+--------------------------------------------------------------------------------
+12. SAB CONFUSE HO GAYA? CLEAN RESTART
+--------------------------------------------------------------------------------
+  cd teampulse
+  docker compose down
+  docker compose up -d postgres redis
+
+  cd backend
+  .\.venv\Scripts\Activate.ps1
+  alembic downgrade base
+  alembic upgrade head
+  python scripts\seed.py
+  uvicorn app.main:app --reload --port 8000
+
+  cd ..\frontend
+  Remove-Item -Recurse -Force .next, node_modules
+  npm install
+  npm run dev
+
+  Ye sirf local build aur local database saaf karta hai. GitHub ya deployed
+  server pe kuch nahi hota.
+
+--------------------------------------------------------------------------------
+13. CHECKLIST (tick karte jaa)
+--------------------------------------------------------------------------------
+  [ ] git, python, node, docker install + PATH me
+  [ ] repo clone, teampulse\ ke andar
+  [ ] Postgres + Redis up
+  [ ] backend\.env bana, DATABASE_URL sahi
+  [ ] alembic upgrade head pass
+  [ ] seed chala, 4 users bane
+  [ ] http://localhost:8000/docs khula
+  [ ] http://localhost:8001/docs khula
+  [ ] frontend .env.local me API URL sahi
+  [ ] http://localhost:3000 khula
+  [ ] arjun@teampulse.ac se login hua
+  [ ] board pe tasks dikhe aur drag kaam kare
+
+Bas. Ab tu locally project chala raha hai. Kuch toota to upar section 11 dekh,
+ya PROJECT_GUIDE.txt me us file ka entry padh.
+================================================================================

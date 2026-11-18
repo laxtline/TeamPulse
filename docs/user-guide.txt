@@ -1,0 +1,265 @@
+================================================================================
+TEAMPULSE - USER GUIDE (HOW TO ACTUALLY USE THE APP)
+================================================================================
+Last updated: 18 November 2026
+For: anyone opening the app for the first time - demo viewer, friend, or
+interviewer. No technical knowledge assumed.
+
+--------------------------------------------------------------------------------
+1. WHAT THIS APP IS FOR
+--------------------------------------------------------------------------------
+TeamPulse is a place for a small team to keep its work in one spot instead of
+scattering it across chat and spreadsheets.
+
+You can:
+  - make a team and invite people,
+  - group work into projects,
+  - put tasks on a Kanban board and move them along,
+  - comment on tasks and see what changed,
+  - ask AI to score a task's priority and summarise your day.
+
+--------------------------------------------------------------------------------
+2. GETTING IN
+--------------------------------------------------------------------------------
+2.1 Open the site (or http://localhost:3000 locally).
+
+2.2 On the landing page you have three options:
+
+    Sign up        create an account with name, email, password
+    Log in         email + password
+    Google/GitHub  one-click login, if the deployment configured OAuth
+
+2.3 Password rules (server-enforced): at least 8 characters. Use something you
+    would not mind showing on a projector - this is a demo app.
+
+2.4 Demo accounts, if the seeded database is present:
+
+      admin@teampulse.ac    / Passcode@9938    (owner-level)
+      arjun@teampulse.ac    / Passcode@9938
+      priya@teampulse.ac    / Passcode@9938
+      rohan@teampulse.ac    / Passcode@9938
+
+    All four belong to the team "Acme Corp" with projects WEB, MOB and API and
+    26 tasks already created.
+
+    If these do not work, the database was not seeded. See setup-guide.txt.
+
+2.5 Sessions: you stay logged in for a while. The access token is short-lived
+    (15 minutes) and is renewed in the background, so you will not be logged out
+    mid-task. If you are idle for about a week, you will need to log in again.
+
+--------------------------------------------------------------------------------
+3. THE SCREEN MAP
+--------------------------------------------------------------------------------
+  /                       landing page
+  /login, /register       auth
+  /dashboard              overview: counts, activity, charts, standup card
+  /dashboard/projects     list of projects in your team
+  /dashboard/projects/[id]  one project, its tasks and members
+  /dashboard/projects/[id]/board   Kanban board (the main workspace)
+  /dashboard/tasks        all tasks assigned to you / your team
+  /dashboard/tasks/[id]   one task: description, comments, activity, AI score
+  /dashboard/team         team members and roles
+  /dashboard/settings     profile, password, notifications, theme
+
+  Note: some links inside the project page point at /analytics and
+  /dashboard/settings routes that do not exist yet, so they can 404. That is a
+  known gap, not something you did wrong.
+
+  Note: there is no shared sidebar layout mounted at the moment, so navigation
+  happens through in-page links and the URL bar rather than a permanent side
+  menu.
+
+--------------------------------------------------------------------------------
+4. FIRST FIVE MINUTES - A GUIDED TOUR
+--------------------------------------------------------------------------------
+Step 1  Log in as arjun@teampulse.ac.
+Step 2  Open Dashboard. You see total projects, total tasks, status counts, a
+        list of recent activity, a velocity chart, a workload chart, and a
+        "Today's Standup" card.
+        - The two charts are fixed sample data, not live numbers. Treat them as
+          placeholders.
+        - The standup card currently fails because of a backend bug. See
+          section 9.
+Step 3  Go to Projects. Open "Web Platform" (key WEB).
+Step 4  Click the board.
+Step 5  Drag a card from Backlog to In Progress. The move is saved: refresh the
+        page and it stays where you put it.
+Step 6  Click a card. The task detail page opens.
+Step 7  Write a comment. It appears in the list and a row is added to the
+        activity log.
+Step 8  Press "AI Priority" (or the score box). You get a 1-10 score, a short
+        reason, and an action such as "Do now" or "Defer".
+Step 9  Go to Team. You see the four members and their roles.
+Step 10 Go to Settings and switch the theme. The choice sticks after refresh
+        because it is stored in the browser.
+
+That tour touches every major feature. Ten minutes, and you have seen the whole
+product.
+
+--------------------------------------------------------------------------------
+5. TEAMS
+--------------------------------------------------------------------------------
+5.1 Create a team
+    Give it a name. You become the owner automatically. A user can only own or
+    join the teams they are added to; there is no public team directory.
+
+5.2 Invite someone
+    Enter the email of a person who has ALREADY registered. There is no email
+    invitation flow - the backend looks up the existing account and adds it. If
+    the email is unknown, you get an error, not a pending invite.
+
+5.3 Roles and what they mean
+    owner   full control, including deleting the team and changing anyone's role
+    admin   manage members and work, cannot remove the owner
+    member  create and edit tasks, comment
+    viewer  read-only
+
+    Rules you will actually notice:
+      - You cannot demote the last owner.
+      - A member cannot promote themselves.
+      - Only the author can edit their own comment; author or admin can delete.
+
+5.4 Remove a member
+    From the team page, if your role allows it. Their tasks stay in the project
+    but become unassigned.
+
+    Known gap: the "Save" and "Delete team" buttons on the team settings screen
+    are not connected to the API yet.
+
+--------------------------------------------------------------------------------
+6. PROJECTS AND TASKS
+--------------------------------------------------------------------------------
+6.1 Create a project
+    Name it and give it a short key (2-5 uppercase letters), for example WEB or
+    MOB. The key is used as a human-friendly prefix for the work.
+
+6.2 Create a task
+    Required: title. Optional but useful: description, status, priority,
+    assignee, story points, due date.
+
+    Where it lands: the column you choose (default Backlog).
+
+    Known gap: the assignee dropdown in the create/edit dialog can be empty
+    because the board does not pass the member list into the dialog. If that
+    happens, create the task first, then assign it from the task detail page.
+
+6.3 The five columns
+    Backlog      not planned yet
+    To Do        planned for now
+    In Progress  someone is working on it
+    Review       waiting for a look
+    Done         finished
+
+6.4 Moving work
+    Drag a card to another column. Both the status and the position inside the
+    column are saved. Two people dragging at the same time can produce a
+    surprising order; refresh to see the stored state.
+
+6.5 Editing and deleting
+    Open the card, use the edit action. Deleting removes the task and writes a
+    "deleted" row into the activity log.
+
+6.6 Task detail page
+    Left: title, description, status, priority, assignee, due date, story points.
+    Right/below: comments, activity timeline, AI priority panel.
+
+--------------------------------------------------------------------------------
+7. COMMENTS AND ACTIVITY
+--------------------------------------------------------------------------------
+  Comments    plain text, newest at the bottom. Edit within your own comment,
+              delete if you are the author or an admin.
+  Activity    an audit trail: created, updated, moved, assigned, commented,
+              deleted. Each row stores the old and new value, so "moved from
+              To Do to In Progress" is real data, not a guess.
+
+  Important expectation setting: activity does NOT update live in another
+  browser tab right now. The WebSocket connection opens and presence works, but
+  task and comment changes are not broadcast. Refresh to see another user's
+  edits.
+
+--------------------------------------------------------------------------------
+8. THE AI FEATURES
+--------------------------------------------------------------------------------
+8.1 Task priority
+    Open a task and request the score. You get:
+      score     1 (low) to 10 (urgent)
+      reason    a sentence explaining the number
+      action    Do now / Schedule this week / Delegate / Defer
+
+    What it looks at: title, description, priority, due date, current status,
+    and how overdue it is.
+    Where the number comes from: the AI microservice, which calls Groq
+    (Llama 3.3 70B). If the key is missing or the call fails, a local rule-based
+    fallback produces the score instead. So the feature never hard-fails.
+    What it does not do: save the score. The field stays empty in the database,
+    so refreshing loses the displayed value.
+
+8.2 Standup summary
+    The dashboard card is meant to show "what I did, what I will do, blockers"
+    plus three priorities. Currently it errors - see section 9.
+
+8.3 Cost and privacy note
+    Prompts include your task titles and descriptions. On a shared deployment,
+    do not put anything confidential in a task.
+
+--------------------------------------------------------------------------------
+9. KNOWN ISSUES YOU WILL SEE (AND SHOULD NOT PANIC ABOUT)
+--------------------------------------------------------------------------------
+  1. "Today's Standup" card shows an error.
+     Cause: the endpoint expects a date as a query parameter while the frontend
+     sends it in the body, plus a bad import on the server. It is a real bug
+     with a known fix.
+
+  2. Dashboard charts never change.
+     They are hard-coded sample data. Every account sees the same five sprint
+     rows and three people.
+
+  3. Notification toggles do not do anything outside the browser.
+     They are saved to localStorage. No email or push is sent.
+
+  4. Assignee list is empty when creating a task.
+     The board does not pass members into the dialog.
+
+  5. Two browser tabs do not sync in real time.
+     No broadcast is emitted on task/comment changes.
+
+  6. "Delete account" and "Delete team" buttons appear to do nothing.
+     They are not wired to the API.
+
+  7. Forgot password says "email sent" but nothing arrives.
+     The endpoint exists; no mail provider is configured.
+
+  8. Project page links to /analytics and a team settings page that 404.
+     Those routes were planned but not built.
+
+  None of these break the core loop: create project -> create task -> move it ->
+  comment -> score it. That loop works.
+
+--------------------------------------------------------------------------------
+10. TIPS FOR DEMOING THIS APP
+--------------------------------------------------------------------------------
+  - Start with the board, not the dashboard. The board is the strongest part.
+  - Drag a card, refresh, and show that it persisted. That single move proves
+    the API, the database and the optimistic UI all work together.
+  - Then open a task and run the AI score twice with different due dates. Show
+    that the number changes with context.
+  - Mention the gaps before the interviewer finds them. "Real-time broadcast is
+    stubbed; presence works, task sync is the next fix" is a much better answer
+    than being caught.
+  - Have the Swagger page open in another tab (http://localhost:8000/docs). It
+    proves the API is real and documented.
+
+--------------------------------------------------------------------------------
+11. GLOSSARY FOR NON-DEVELOPERS
+--------------------------------------------------------------------------------
+  Kanban board    columns of cards where moving a card = changing status
+  Task            one unit of work
+  Project         a group of tasks, inside a team
+  Team            the group of people who share projects
+  Role            what you are allowed to do
+  Activity log    automatic history of changes
+  AI priority     a score from 1-10 suggesting urgency
+  Standup         a short daily summary of work
+  Token/session   the thing that keeps you logged in
+================================================================================

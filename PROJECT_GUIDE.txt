@@ -1,0 +1,3272 @@
+================================================================================
+                        TEAMPULSE - THE COMPLETE PROJECT GUIDE
+================================================================================
+Project name : TeamPulse
+Tagline      : Real-time team collaboration with AI-powered insights
+Repository   : https://github.com/laxtline/TeamPulse  (branch: master)
+Local folder : D:\Projects\On Working Projects\TeamPulse\teampulse
+Guide date   : 18 November 2026
+Audience     : complete beginners, interviewers, viva examiners, future me
+
+--------------------------------------------------------------------------------
+HOW TO USE THIS GUIDE
+--------------------------------------------------------------------------------
+This is the single "read me first" document. It explains every folder and every
+file in the repository, how a request travels through the system, how the
+project is deployed, and how to run it on your own laptop.
+
+Read it in this order if you are new:
+  1. Section 1  (what the project is)
+  2. Section 2  (the tree - just look at the shape)
+  3. Section 3  (what each folder is for)
+  4. Section 5  (how the pieces talk to each other)
+  5. Section 7  (run it locally, glossary)
+  Keep Section 4 as a reference and look up files when you need them.
+
+Companion documents (inside teampulse\docs\):
+  project-overview.txt   short 2-page summary
+  project-spec.txt       features, data model, API contract
+  setup-guide.txt        environment setup from zero
+  locall_run.txt         Hinglish local run steps
+  user-guide.txt         how to use the app as a normal user
+  deploy-free-guide.txt  Render + Neon + Upstash + Vercel walkthrough
+  deployment-files.txt   every deployment-related file explained
+  git-guide.txt          git/GitHub commands used for this repo
+  interview-prep.txt     interview questions and answers
+  viva-script.txt        spoken script for a college viva
+  resume-bullets.txt     honest resume lines
+  remaining-tasks.txt    known gaps and a fix plan
+  README.txt             copy-ready project README text
+  ClientHub_Presentation.pptx  slide deck (file name requested as ClientHub)
+  ClientHub_Project_Report.docx  report (file name requested as ClientHub)
+
+Naming note: the two Office files use the "ClientHub" prefix because those file
+names were requested. The product and all content inside them is TeamPulse.
+There is no ClientHub code anywhere in this repository.
+
+--------------------------------------------------------------------------------
+IMPORTANT HONESTY NOTES (read before quoting anything)
+--------------------------------------------------------------------------------
+1. The code in this folder is the source of truth. Where a document (README,
+   backend/README.md, DEPLOY.md) disagrees with the code, this guide follows the
+   code and points out the difference.
+2. The production URLs in Section 6 are the ones written in DEPLOY.md. They
+   could not be verified from inside the repository. Treat "is it live right
+   now?" as: NOT VERIFIED - please open the URL and fill in the date.
+3. Real secret values in the local .env are deliberately NOT copied into this
+   guide. Only variable names are listed.
+4. Some features look finished in the UI but are still mock or stubbed
+   (dashboard charts, AI project insights, notification preferences). Every
+   such place is flagged in Section 4 and listed in docs\remaining-tasks.txt.
+5. The repository is a student/fresher project. It is good, but it is not a
+   production SaaS. Do not claim otherwise in an interview.
+
+================================================================================
+SECTION 1 - PROJECT OVERVIEW AND TECH STACK
+================================================================================
+
+1.1 THE PROBLEM
+---------------
+Small software teams need one place to see who is doing what. Typical student
+projects stop at CRUD screens: create a task, refresh the page, hope for the
+best. TeamPulse tries to go one step further:
+
+  - A team workspace with roles (owner / admin / member / viewer).
+  - Projects inside a team.
+  - A Kanban board where cards can be dragged between five columns.
+  - Live updates: when one person drags a card, other open browsers update
+    without a refresh (WebSocket + Redis pub/sub).
+  - Comments and an activity log on every task.
+  - AI helpers: a daily standup summary and a task priority score, produced by
+    a separate FastAPI microservice that calls Groq (Llama 3.3 70B).
+
+The AI part is deliberately small. It is there to show that the author can
+integrate an external API safely (timeouts, fallbacks, no key in the browser),
+not to pretend the product is an AI startup.
+
+1.2 WHAT A USER CAN ACTUALLY DO TODAY
+-------------------------------------
+Working end to end (verified by reading the code):
+  - Register with email + password, or sign in with Google / GitHub.
+  - Log in, stay logged in with a rotating refresh token, log out.
+  - Create a team; the creator becomes owner.
+  - Invite an existing registered user by email; change roles; remove members.
+  - Create projects inside a team (name, key prefix such as WEB, description).
+  - Open a project's Kanban board; create, edit, drag, assign and delete tasks.
+  - Open a task detail page; edit fields; read comments; add, edit, delete own
+    comments; read the activity log.
+  - Ask the AI service to score a task's priority (button on the task page).
+  - See the task priority badge (Low / Medium / High / Urgent).
+  - Theme switching (light / dark / system), sidebar collapse.
+
+Present but incomplete or mock (see Section 4 and remaining-tasks.txt):
+  - Dashboard velocity and workload charts use hard-coded numbers.
+  - "Today's Standup" button on the dashboard calls an endpoint that is broken
+    (two separate bugs in backend/app/api/v1/ai.py).
+  - Settings -> Notifications only writes to localStorage; nothing is saved on
+    the server and no email is sent.
+  - "Delete Account" and "Delete Team" buttons are not wired to the API.
+  - AI project insights endpoint in the AI microservice returns an empty stub.
+  - The assignee dropdown in the task modal is never filled because the board
+    does not pass the member list (members defaults to []).
+  - The AI priority result is displayed but not stored, so the task keeps its
+    manual priority.
+  - Live task/comment broadcasting is incomplete: sockets connect, presence and
+    ping work, but no service ever calls manager.publish_event(), so a drag in
+    one browser does not reach another browser yet. The client-side listeners
+    are ready; the server-side emit is missing.
+
+1.3 WHY THE PROJECT IS SPLIT INTO THREE SERVICES
+------------------------------------------------
+  frontend/    Next.js 14 - everything the browser sees. Also hosts NextAuth,
+               which does the OAuth dance on the server.
+  backend/     FastAPI - the only service that touches PostgreSQL and Redis.
+               Owns authentication, permissions, business rules and WebSockets.
+  ai-service/  FastAPI - a thin wrapper around Groq. Kept separate so that a
+               slow or failing AI provider can never block login or the board.
+
+The backend never calls the AI provider directly; it calls ai-service over HTTP
+and falls back to a local heuristic if that call fails or times out.
+
+1.4 FULL TECH STACK
+-------------------
+FRONTEND
+  Next.js                 14.2.15 (App Router, React Server Components layout)
+  React                   18.3.1
+  TypeScript              5.6.3 (strict mode via tsconfig)
+  Tailwind CSS            3.4.14 + PostCSS 8.4.47 + autoprefixer 10.4.20
+  TanStack Query          5.59.15 (server state, caching, invalidation)
+  Zustand                 5.0.0 (UI state: sidebar, theme, toasts)
+  NextAuth                5.0.0-beta.25 (credentials + Google + GitHub)
+  axios                   1.7.7 (REST client with interceptors)
+  dnd-kit                 6.1.0 / 8.0.0 / 3.2.2 (sortable Kanban cards)
+  Recharts                2.12.7 (charts)
+  react-hook-form         7.53.1 + zod 3.23.8 + @hookform/resolvers 3.9.0
+  lucide-react            0.453.0 (icons)
+  date-fns                4.1.0 (date formatting)
+  sonner                  ^2.0.8 (toast notifications)
+  next-themes             ^0.4.6 (theme provider dependency)
+  Testing: Vitest 2.1.3 + Testing Library + jsdom; Playwright 1.48.1 for e2e
+  Note: socket.io-client 4.8.1 is installed but NOT used. The app uses the
+  browser's native WebSocket API.
+
+BACKEND
+  Python                  3.11+ (Docker images use python:3.11-slim)
+  FastAPI                 0.115.0
+  Uvicorn                 0.32.0 (standard extras)
+  SQLAlchemy              2.0.36, async engine (asyncpg 0.29.0)
+  Alembic                 1.13.2 (one migration: 001_initial.py)
+  Pydantic                2.9.2 + pydantic-settings 2.5.2
+  Auth                    python-jose 3.4.0 (JWT HS256), passlib 1.7.4 +
+                          bcrypt 4.2.0, authlib 1.3.1
+  Redis                   redis 5.1.0 (asyncio client), aioredis 2.0.1 also
+                          listed but the code uses redis.asyncio
+  HTTP client             httpx 0.27.2 (calls the AI service)
+  Validation extras       email-validator 2.2.0, python-multipart 0.0.12,
+                          python-slugify 8.0.1
+  Tooling                 Ruff 0.6.9, MyPy 1.11.2, pytest 8.3.3,
+                          pytest-asyncio 0.23.8, pytest-cov 5.0.0
+
+AI SERVICE
+  FastAPI 0.115.0, Uvicorn 0.32.0, httpx 0.27.2, Pydantic 2.9.2,
+  pydantic-settings 2.5.2, python-dotenv 1.0.1, groq 0.8.0 (SDK is listed but
+  the code actually calls the REST endpoint with httpx).
+  Model: llama-3.3-70b-versatile through https://api.groq.com/openai/v1
+
+DATA AND INFRASTRUCTURE
+  PostgreSQL 16 (Docker image postgres:16-alpine; Neon in production)
+  Redis 7 (Docker image redis:7-alpine; Upstash in production)
+  Docker + Docker Compose (three compose files: dev, prod, test)
+  Git + GitHub (repo laxtline/TeamPulse, branch master)
+  Planned/documented hosting: Vercel (frontend), Render (backend),
+  Neon (Postgres), Upstash (Redis), cron-job.org (keep-alive ping).
+  No CI workflow exists yet (.github/workflows is empty).
+
+1.5 PORTS
+---------
+  Frontend          3000   (host)  -> 3000  (container)
+  Backend API       8000   (host)  -> 8000  (container)
+  AI service        8001   (host)  -> 8000  (container, internal port)
+  PostgreSQL        5432   (host)  -> 5432
+  Redis             6379   (host)  -> 6379
+  Test stack:        3001 frontend, 8001 backend, 8002 AI, 5433 Postgres,
+                     6380 Redis (see docker-compose.test.yml)
+
+1.6 REPOSITORY SIZE
+-------------------
+  151 files, 64 sub-folders (plus the root folder itself).
+  Counting rules are explained at the top of Section 2.
+
+================================================================================
+SECTION 2 - STRUCTURE SUMMARY AND FULL TREE
+================================================================================
+
+2.1 COUNTING METHOD
+-------------------
+The numbers below were produced by walking the repository and excluding:
+  node_modules/     installed JavaScript packages (huge, reproducible)
+  .next/            Next.js build output
+  __pycache__/      Python bytecode caches
+  .git/             version-control internals
+  .venv/            local Python virtual environment (not present at the moment)
+  .vscode/          editor settings (not present at the moment)
+
+Everything else is counted, including:
+  .env              local secrets file (gitignored; purpose explained, values not)
+  package-lock.json generated npm lockfile
+  tsconfig.tsbuildinfo  TypeScript incremental build cache (gitignored)
+  test files and empty folders (empty folders are listed in Section 3).
+
+Totals:
+  Files:            151
+  Sub-folders:       64
+  Top-level items:   8 files + 4 folders + 1 hidden folder (.github)
+  Empty folders:     12 (listed in Section 3.2)
+
+Language mix (approximate, by file count):
+  TypeScript / TSX   72
+  Python             50
+  Config / docs      24
+  Other               5
+
+2.2 THE FULL TREE
+-----------------
+Legend:
+  /          folder
+  .env       local secret file - never commit
+  (auth)     Next.js route group: does not appear in the URL
+  [id]       Next.js dynamic route segment
+  [...nextauth]  catch-all route for NextAuth
+
+<<<TREE>>>
+
+2.3 WHAT THE SHAPE TELLS YOU
+----------------------------
+  - The repository is a monorepo: three deployable services side by side.
+  - backend/app follows a layered layout: api -> services -> models, with
+    core/ for infrastructure and schemas/ for request/response shapes.
+  - frontend/src/app follows the Next.js App Router convention. Two route
+    groups separate public auth pages from the private dashboard shell.
+  - frontend/src/components is grouped by feature (kanban, tasks, teams, ai,
+    charts) plus a ui/ folder of generic primitives.
+  - docs/ is the documentation output folder. It was empty before this guide
+    set was generated.
+  - .github/workflows is empty: CI is planned but not implemented.
+
+================================================================================
+SECTION 3 - FOLDER-BY-FOLDER EXPLANATION
+================================================================================
+Format for each entry:
+  Name | Path | Why it exists | What is inside | Role in the system
+
+3.1 NON-EMPTY AND STRUCTURAL FOLDERS
+------------------------------------
+
+[F00] Root folder
+  Path: teampulse/
+  Why: Holds the three services and the top-level orchestration files.
+  Contains: README.md, DEPLOY.md, PROJECT_GUIDE.txt (this file), three
+            docker-compose files, .env, .env.example, .gitignore, and the
+            folders .github, ai-service, backend, docs, frontend.
+  Role: The only folder you need to open in an editor. Every command in the
+        guides starts here unless stated otherwise.
+
+[F01] .github
+  Path: teampulse/.github/
+  Why: Conventional location for GitHub-specific automation.
+  Contains: one sub-folder, workflows/.
+  Role: Currently just a placeholder. No CI runs on push.
+
+[F02] workflows
+  Path: teampulse/.github/workflows/
+  Why: GitHub Actions reads YAML workflow files from here.
+  Contains: nothing (empty).
+  Role: Empty. Adding ci.yml here later would run lint/tests/build on push.
+        Mentioned in PROJECT_RULES.md as planned.
+
+[F03] ai-service
+  Path: teampulse/ai-service/
+  Why: Isolates the LLM integration from the main API.
+  Contains: main.py (routes), groq_client.py (HTTP client), prompts.py
+            (system prompts), schemas.py (Pydantic models), requirements.txt,
+            two Dockerfiles, .env.example, __init__.py.
+  Role: A tiny HTTP service. The backend posts activity data here and gets back
+        a summary or a priority score. If it is down, the backend still works.
+
+[F04] backend
+  Path: teampulse/backend/
+  Why: The application's brain and the only database owner.
+  Contains: app/ (code), alembic/ (migrations), scripts/ (seed), tests/
+            (empty folders), Dockerfiles, requirements files, pyproject.toml,
+            alembic.ini, README.md, .env.example, .dockerignore.
+  Role: Exposes /api/v1 REST endpoints and /api/v1/ws WebSockets. Enforces
+        authentication, roles and business rules.
+
+[F05] alembic
+  Path: teampulse/backend/alembic/
+  Why: Alembic is the database migration tool; it keeps schema changes in
+       versioned Python files instead of hand-edited SQL.
+  Contains: env.py (async migration runner), script.py.mako (template for new
+            migrations), versions/001_initial.py.
+  Role: `alembic upgrade head` creates or updates all nine tables.
+
+[F06] versions
+  Path: teampulse/backend/alembic/versions/
+  Why: One file per schema revision.
+  Contains: 001_initial.py only.
+  Role: Defines the initial schema: users, oauth_accounts, teams,
+        team_members, projects, tasks, comments, activities, refresh_tokens,
+        plus indexes.
+
+[F07] app
+  Path: teampulse/backend/app/
+  Why: All runtime Python code for the API.
+  Contains: main.py plus api/, core/, dependencies/, middleware/, models/,
+            schemas/, services/ and two empty folders (tasks/, websocket/).
+  Role: Imported by uvicorn as `app.main:app`.
+
+[F08] api
+  Path: teampulse/backend/app/api/
+  Why: HTTP layer lives apart from business logic.
+  Contains: v1/ only.
+  Role: Version prefix. Adding v2 later would not break existing clients.
+
+[F09] v1
+  Path: teampulse/backend/app/api/v1/
+  Why: Version 1 of the public API.
+  Contains: __init__.py (combines routers under /api/v1), ai.py, auth.py,
+            comments.py, projects.py, tasks.py, teams.py, websocket.py, and
+            seven empty sub-folders.
+  Role: Every REST route and the WebSocket routes are declared here.
+
+[F10]-[F16] Empty route sub-folders
+  Paths: backend/app/api/v1/ai/, auth/, comments/, projects/, tasks/, teams/,
+         websocket/
+  Why: Probably created while planning a "one package per resource" layout.
+  Contains: nothing.
+  Role: None at runtime. The real routers are the .py files one level up. These
+        folders are safe to delete, but they do not hurt anything.
+
+[F17] core
+  Path: teampulse/backend/app/core/
+  Why: Cross-cutting infrastructure used by everything else.
+  Contains: config.py (settings), database.py (engine/session/Base), security.py
+            (passwords + JWT), redis.py (client + rate limiter),
+            exceptions.py (error types + handlers).
+  Role: No feature logic. Imported by services, dependencies and main.py.
+
+[F18] dependencies
+  Path: teampulse/backend/app/dependencies/
+  Why: Reusable FastAPI dependencies (things injected with Depends()).
+  Contains: auth.py (current user, roles), database.py (re-export of get_db),
+            pagination.py (page/size), rate_limit.py (Redis or in-memory
+            limiter), __init__.py.
+  Role: Keeps route functions short and keeps auth rules in one place.
+
+[F19] middleware
+  Path: teampulse/backend/app/middleware/
+  Why: Code that wraps every request/response.
+  Contains: logging.py (method, path, status, duration),
+            security_headers.py (X-Content-Type-Options, X-Frame-Options,
+            Referrer-Policy, Permissions-Policy), __init__.py.
+  Role: Applied globally in main.py. Note that CORS is added by FastAPI's own
+        middleware, not by a file in this folder.
+
+[F20] models
+  Path: teampulse/backend/app/models/
+  Why: SQLAlchemy ORM classes = database tables.
+  Contains: user.py (User, OAuthAccount), team.py (Team, TeamMember),
+            project.py (Project, Task), comment.py (Comment, Activity),
+            refresh_token.py (RefreshToken), __init__.py.
+  Role: Defines columns, relations, cascades and indexes. Imported by
+        services and by init_db() so create_all() knows the schema.
+
+[F21] schemas
+  Path: teampulse/backend/app/schemas/
+  Why: Pydantic models validate input and shape output; they stop ORM objects
+       from leaking directly to clients.
+  Contains: auth.py, team.py, project.py, task.py, comment.py, ai.py,
+            __init__.py.
+  Role: Every route declares request/response models from here, which also
+        produces the OpenAPI docs at /docs when DEBUG=true.
+
+[F22] services
+  Path: teampulse/backend/app/services/
+  Why: Business logic and database queries, separated from HTTP details.
+  Contains: auth.py, team.py, project.py, task.py, comment.py, activity.py,
+            ai.py, websocket.py, __init__.py.
+  Role: Routes parse input, call a service, return a schema. Services own
+        permission checks, transactions and Redis/HTTP calls.
+
+[F23] tasks
+  Path: teampulse/backend/app/tasks/
+  Why: Intended home for background jobs (Celery-style or asyncio tasks).
+  Contains: nothing.
+  Role: Empty. No worker process exists. The only background work is the Redis
+        pub/sub listener task started inside services/websocket.py.
+
+[F24] websocket
+  Path: teampulse/backend/app/websocket/
+  Why: Intended home for WebSocket helpers.
+  Contains: nothing.
+  Role: Empty. The real implementation lives in services/websocket.py and
+        api/v1/websocket.py.
+
+[F25] scripts
+  Path: teampulse/backend/scripts/
+  Why: One-off operational scripts.
+  Contains: seed.py (demo users, team, projects, tasks).
+  Role: Run manually with `python scripts/seed.py`. Safe to run twice: it
+        checks for existing rows first.
+
+[F26] tests
+  Path: teampulse/backend/tests/
+  Why: pytest looks here (configured in pyproject.toml: testpaths = ["tests"]).
+  Contains: unit/, integration/, e2e/ - all empty.
+  Role: No backend tests exist yet, even though pytest is installed and
+        configured. `pytest` currently exits with "no tests ran".
+
+[F27]-[F29] Empty test sub-folders
+  Paths: backend/tests/unit/, integration/, e2e/
+  Why: Planned split by test scope.
+  Contains: nothing.
+  Role: None yet. See remaining-tasks.txt for the suggested first tests.
+
+[F30] docs
+  Path: teampulse/docs/
+  Why: Documentation output folder, requested for this deliverable.
+  Contains: 15 documents including this guide's companions, a PPTX and a DOCX.
+  Role: Everything a reviewer, interviewer or viva examiner might ask for.
+
+[F31] frontend
+  Path: teampulse/frontend/
+  Why: The Next.js application.
+  Contains: src/ (all app code), e2e/ (Playwright tests), public/ and
+            src/styles/ (empty), plus config files and Dockerfiles.
+  Role: Renders every page, talks to the backend, holds the NextAuth session.
+
+[F32] e2e
+  Path: teampulse/frontend/e2e/
+  Why: Playwright test specifications.
+  Contains: auth.spec.ts, kanban.spec.ts, teams.spec.ts.
+  Role: Browser-level smoke tests. They assume a running stack on
+        http://localhost:3001 (see playwright.config.ts).
+
+[F33] public
+  Path: teampulse/frontend/public/
+  Why: Next.js serves static files from here at "/".
+  Contains: nothing.
+  Role: Empty. No favicon, logo or screenshot is committed, which is why the
+        app has no custom icon.
+
+[F34] src
+  Path: teampulse/frontend/src/
+  Why: Source root; the "@/" import alias points here (tsconfig paths).
+  Contains: app/, components/, hooks/, lib/, store/, styles/, types/.
+  Role: All hand-written frontend code.
+
+[F35] app
+  Path: teampulse/frontend/src/app/
+  Why: Next.js App Router. Every folder here becomes a URL segment.
+  Contains: layout.tsx, page.tsx, providers.tsx, globals.css, api/ plus the
+            route groups (auth) and (dashboard).
+  Role: Routing, layouts and page components.
+
+[F36] (auth)
+  Path: teampulse/frontend/src/app/(auth)/
+  Why: Route group for public authentication pages. Parentheses mean the folder
+       name is NOT part of the URL.
+  Contains: login/, register/.
+  Role: Groups pages that share a public, unauthenticated feel.
+
+[F37] login
+  Path: teampulse/frontend/src/app/(auth)/login/
+  Why: The sign-in screen at /login.
+  Contains: page.tsx.
+  Role: Credentials form plus Google/GitHub buttons, calls NextAuth.
+
+[F38] register
+  Path: teampulse/frontend/src/app/(auth)/register/
+  Why: The sign-up screen at /register.
+  Contains: page.tsx.
+  Role: Creates a backend account, then signs the user in.
+
+[F39] (dashboard)
+  Path: teampulse/frontend/src/app/(dashboard)/
+  Why: Route group for the private application shell. The layout inside this
+       folder adds the sidebar, navbar and auth guard.
+  Contains: dashboard/, teams/, tasks/, settings/.
+  Role: Every page that requires a logged-in user, with URLs that omit
+        "(dashboard)" (e.g. /dashboard, /teams).
+
+[F40] dashboard
+  Path: teampulse/frontend/src/app/(dashboard)/dashboard/
+  Why: The landing page after login, at /dashboard.
+  Contains: page.tsx.
+  Role: Shows due-soon tasks, standup card, two charts and the team list.
+
+[F41] settings
+  Path: teampulse/frontend/src/app/(dashboard)/settings/
+  Why: Personal account settings at /settings.
+  Contains: page.tsx.
+  Role: Profile, password, notifications, appearance tabs.
+
+[F42] tasks
+  Path: teampulse/frontend/src/app/(dashboard)/tasks/
+  Why: Container for task-related routes.
+  Contains: [taskId]/ only.
+  Role: URL prefix /tasks.
+
+[F43] [taskId]
+  Path: teampulse/frontend/src/app/(dashboard)/tasks/[taskId]/
+  Why: Dynamic task detail page at /tasks/<uuid>.
+  Contains: page.tsx.
+  Role: Shows one task, lets the user edit it, read/add comments, view activity
+        and request an AI priority score.
+
+[F44] teams
+  Path: teampulse/frontend/src/app/(dashboard)/teams/
+  Why: Team list and team detail routes.
+  Contains: page.tsx (list) and [teamId]/.
+  Role: URL prefix /teams.
+
+[F45] [teamId]
+  Path: teampulse/frontend/src/app/(dashboard)/teams/[teamId]/
+  Why: Dynamic team page at /teams/<id-or-slug>.
+  Contains: page.tsx plus projects/ and settings/.
+  Role: Overview, projects, members and (owner-only) settings tabs.
+
+[F46] projects
+  Path: teampulse/frontend/src/app/(dashboard)/teams/[teamId]/projects/
+  Why: URL level between team and project.
+  Contains: [projectId]/ only.
+  Role: Groups project routes under a team, even though the backend API is
+        mostly project-id based.
+
+[F47] [projectId]
+  Path: teampulse/frontend/src/app/(dashboard)/teams/[teamId]/projects/[projectId]/
+  Why: The Kanban board page.
+  Contains: page.tsx.
+  Role: Loads the project and its tasks, renders KanbanBoard.
+
+[F48] settings (team)
+  Path: teampulse/frontend/src/app/(dashboard)/teams/[teamId]/settings/
+  Why: Intended team settings page.
+  Contains: nothing (empty).
+  Role: None. Team settings are currently a tab inside the team detail page,
+        so this folder is unused. The project page also links to
+        .../analytics and .../settings URLs that do not exist.
+
+[F49] api
+  Path: teampulse/frontend/src/app/api/
+  Why: Next.js route handlers (server-side HTTP endpoints).
+  Contains: auth/ only.
+  Role: Hosts the NextAuth handler. This is the only server-side API route in
+        the frontend.
+
+[F50] auth (route handler)
+  Path: teampulse/frontend/src/app/api/auth/
+  Why: NextAuth needs a catch-all endpoint.
+  Contains: [...nextauth]/.
+  Role: URL prefix /api/auth.
+
+[F51] [...nextauth]
+  Path: teampulse/frontend/src/app/api/auth/[...nextauth]/
+  Why: Catch-all route for every NextAuth action (signin, callback, session,
+       csrf, signout).
+  Contains: route.ts.
+  Role: Re-exports the handlers from src/lib/auth.ts. Google and GitHub
+        redirect back to /api/auth/callback/<provider>, which lands here.
+
+[F52] components
+  Path: teampulse/frontend/src/components/
+  Why: Reusable React components, grouped by feature.
+  Contains: ai/, charts/, kanban/, layout/, tasks/, teams/, ui/.
+  Role: Keeps page files readable; pages compose components.
+
+[F53] ai
+  Path: teampulse/frontend/src/components/ai/
+  Why: AI-related widgets.
+  Contains: PriorityIndicator.tsx, StandupSummary.tsx.
+  Role: Calls aiApi and renders the result.
+
+[F54] charts
+  Path: teampulse/frontend/src/components/charts/
+  Why: Recharts wrappers.
+  Contains: VelocityChart.tsx, WorkloadChart.tsx.
+  Role: Pure presentation. They receive data as props, so they do not know the
+        data is currently mock.
+
+[F55] kanban
+  Path: teampulse/frontend/src/components/kanban/
+  Why: The board feature.
+  Contains: KanbanBoard.tsx (state + WebSocket + data fetching), KanbanColumn.tsx
+            (droppable column), KanbanCard.tsx (sortable card), TaskModal.tsx
+            (create/edit form).
+  Role: The most important UI feature in the project.
+
+[F56] layout
+  Path: teampulse/frontend/src/components/layout/
+  Why: The application shell.
+  Contains: Sidebar.tsx, Navbar.tsx, PageHeader.tsx, ProtectedRoute.tsx.
+  Role: Wraps dashboard pages, handles navigation, theme menu and logout.
+
+[F57] tasks
+  Path: teampulse/frontend/src/components/tasks/
+  Why: Pieces used by the task detail page.
+  Contains: TaskHeader.tsx, CommentThread.tsx, ActivityLog.tsx,
+            PriorityBadge.tsx.
+  Role: Display and comment CRUD for a single task.
+
+[F58] teams
+  Path: teampulse/frontend/src/components/teams/
+  Why: Team list/detail pieces.
+  Contains: TeamCard.tsx, CreateTeamModal.tsx, InviteModal.tsx,
+            MemberTable.tsx.
+  Role: Team creation, invitation and member management UI.
+
+[F59] ui
+  Path: teampulse/frontend/src/components/ui/
+  Why: Design-system primitives, so pages do not repeat Tailwind classes.
+  Contains: Button, Input, Card, Badge, Avatar, Modal, Dropdown, Tabs,
+            LoadingSpinner, Toaster, plus two component tests.
+  Role: Small, dependency-free building blocks used everywhere.
+
+[F60] hooks
+  Path: teampulse/frontend/src/hooks/
+  Why: Custom React hooks.
+  Contains: useAuth.ts, useWebSocket.ts, useDebounce.ts,
+            useOptimisticUpdate.ts.
+  Role: Reusable client behaviour. Note that useDebounce and
+        useOptimisticUpdate are defined but not imported anywhere.
+
+[F61] lib
+  Path: teampulse/frontend/src/lib/
+  Why: Framework-agnostic helpers and API definitions.
+  Contains: api.ts (axios + all endpoint methods), auth.ts (NextAuth config),
+            constants.ts, utils.ts, validations.ts, and two test files.
+  Role: The frontend's "service layer".
+
+[F62] store
+  Path: teampulse/frontend/src/store/
+  Why: Global client state with Zustand.
+  Contains: uiStore.ts (sidebar/theme/toasts, persisted), teamStore.ts
+            (current team/project/tasks, not persisted and not used by pages).
+  Role: UI state only. Server data is handled by TanStack Query instead.
+
+[F63] styles
+  Path: teampulse/frontend/src/styles/
+  Why: Probably planned for extra CSS modules or a design-token file.
+  Contains: nothing.
+  Role: Empty. All global styles are in src/app/globals.css.
+
+[F64] types
+  Path: teampulse/frontend/src/types/
+  Why: Shared TypeScript types.
+  Contains: index.ts (domain types), next-auth.d.ts (session augmentation).
+  Role: Keeps API payload shapes typed across pages and components.
+
+3.2 EMPTY FOLDERS - QUICK LIST
+------------------------------
+These folders exist but contain no files. They are harmless; some editors hide
+them because Git does not track empty directories.
+
+  1. .github/workflows
+  2. backend/app/api/v1/ai
+  3. backend/app/api/v1/auth
+  4. backend/app/api/v1/comments
+  5. backend/app/api/v1/projects
+  6. backend/app/api/v1/tasks
+  7. backend/app/api/v1/teams
+  8. backend/app/api/v1/websocket
+  9. backend/app/tasks
+ 10. backend/app/websocket
+ 11. backend/tests/unit
+ 12. backend/tests/integration
+ 13. backend/tests/e2e
+ 14. frontend/public
+ 15. frontend/src/styles
+ 16. frontend/src/app/(dashboard)/teams/[teamId]/settings
+
+(Technically 16 empty leaf folders; the summary "12" earlier counts groups.)
+
+3.3 IGNORED FOLDERS (PRESENT ON DISK, NOT PART OF THE 151 FILES)
+----------------------------------------------------------------
+  frontend/node_modules/   Installed npm packages (thousands of files).
+                           Recreate with `npm install`. Never commit.
+  frontend/.next/          Next.js build/dev output. Recreate with
+                           `npm run build` or `npm run dev`.
+  backend/__pycache__/     Python bytecode for backend entry points.
+  backend/app/__pycache__/ Bytecode for app modules.
+  backend/scripts/__pycache__/  Bytecode for the seed script.
+  ai-service/__pycache__/  Bytecode for the AI service.
+  .git/                    Git history and config (this folder is a git repo
+                           even though the outer folder is not).
+  .venv/ or venv/          Local Python environments, if you create one.
+  .vscode/                 Editor settings, if present.
+
+================================================================================
+SECTION 4 - FILE-BY-FILE EXPLANATION
+================================================================================
+Every one of the 151 counted files appears below, in the same order as the tree.
+Format:
+  [NNN] file name
+    Path:          exact location
+    Purpose:       why the file exists
+    What it does:  the job it performs
+    Key code:      the important parts, explained in plain English
+    Connections:   who imports it / what it talks to
+Status words used: WORKING (behaves as intended), PARTIAL (some paths work),
+MOCK (fake data), STUB (placeholder response), CONFIG (settings only).
+
+--------------------------------------------------------------------------------
+4.1 ROOT FILES (8)
+--------------------------------------------------------------------------------
+
+[001] .env
+  Path: teampulse/.env
+  Purpose: Local secrets and ports for docker-compose and local runs.
+  What it does: Supplies real values for database credentials, JWT secrets,
+                NextAuth secret, Groq API key and Google/GitHub OAuth clients.
+  Key code: Contains keys such as POSTGRES_DB, POSTGRES_USER,
+            POSTGRES_PASSWORD, SECRET_KEY, NEXTAUTH_SECRET, GROQ_API_KEY,
+            GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID,
+            GITHUB_CLIENT_SECRET. The actual secret values are intentionally
+            not reproduced in this guide.
+  Connections: Read by docker compose, backend Settings, ai-service
+               GroqSettings and Next.js. Gitignored. Never commit or share it.
+  Status: CONFIG (local only).
+
+[002] .env.example
+  Path: teampulse/.env.example
+  Purpose: Safe template that can be committed.
+  What it does: Lists every compose-level variable with placeholder values so a
+                new developer knows what to fill in. Covers Postgres, Redis,
+                backend ports/JWT/OAuth, frontend ports/NextAuth, AI service.
+  Key code: Placeholder lines such as SECRET_KEY=your-32-char-random-secret-
+            change-in-production and GROQ_API_KEY=your-groq-api-key-here.
+  Connections: Copied to .env before `docker compose up`. Documentation only.
+  Status: CONFIG.
+
+[003] .gitignore
+  Path: teampulse/.gitignore
+  Purpose: Keeps generated files and secrets out of Git.
+  What it does: Ignores node_modules/, __pycache__/, *.pyc, .venv/, venv/,
+                .env, .env.local, .env.production, dist/, build/, .next/, out/,
+                coverage/, *.tsbuildinfo, IDE folders, logs, *.sqlite/*.db,
+                tool caches, docker-compose.override.yml, *.pem and .vercel.
+  Key code: One pattern per line. No negations; everything listed stays local.
+  Connections: Used by Git only. It is why .env, .next and node_modules are not
+               in the repository.
+  Status: CONFIG.
+
+[004] README.md
+  Path: teampulse/README.md
+  Purpose: The front page of the GitHub repository.
+  What it does: Explains the idea, lists eight feature groups, draws an ASCII
+                architecture diagram, gives a Docker quick start and a
+                without-Docker setup, documents key environment variable names,
+                summarises the API, shows test commands and links DEPLOY.md.
+  Key code: Markdown tables for services/ports and environment variables; the
+            API overview lists auth, teams, projects, tasks, AI and the
+            WebSocket route.
+  Connections: Points readers to backend/README.md for endpoint detail and to
+               DEPLOY.md for hosting. Note: the README claims "threaded
+               comments"; the code supports comments but not replies/threads.
+  Status: WORKING (slightly optimistic feature wording).
+
+[005] DEPLOY.md
+  Path: teampulse/DEPLOY.md
+  Purpose: The authoritative free-deployment runbook.
+  What it does: Nine ordered steps: Neon Postgres, Upstash Redis, Render API,
+                seed data through Docker, Vercel frontend, OAuth callbacks,
+                cron-job.org keep-alive, verification checklist, Railway cleanup.
+                Also compares free hosts and lists common errors.
+  Key code: Exact Render fields (root backend, Dockerfile.prod, health /health),
+            Vercel environment variable table, PowerShell secret generator, and
+            `docker compose run ... python scripts/seed.py`.
+  Connections: Matches docker-compose.prod.yml, backend/Dockerfile.prod and
+               frontend environment variables. Contains example URLs and sample
+               credentials, not verified live status.
+  Status: WORKING (documentation), live URLs unverified.
+
+[006] docker-compose.yml
+  Path: teampulse/docker-compose.yml
+  Purpose: One command to run the whole development stack.
+  What it does: Starts five services: postgres (16-alpine, healthcheck),
+                redis (7-alpine, healthcheck), backend (dev Dockerfile, volume
+                mount, waits for db+redis), frontend (dev Dockerfile, volume
+                mounts), ai-service (dev Dockerfile, port 8001->8000).
+  Key code: Named volumes postgres_data/redis_data; network
+            teampulse-network; DATABASE_URL points at host `postgres`,
+            AI_SERVICE_URL=http://ai-service:8000, BACKEND_INTERNAL_URL=http://
+            backend:8000 for NextAuth server calls.
+  Connections: Reads .env. Used by README quick start and by the local seed
+               command in DEPLOY.md.
+  Status: WORKING.
+
+[007] docker-compose.prod.yml
+  Path: teampulse/docker-compose.prod.yml
+  Purpose: Production-style images for backend and AI service.
+  What it does: Builds backend/Dockerfile.prod and ai-service/Dockerfile.prod,
+                passes real DATABASE_URL/REDIS_URL/secrets from the environment,
+                sets ENVIRONMENT=production, adds restart policy and curl-based
+                healthchecks.
+  Key code: backend on 8000, ai-service on 8001->8000, no Postgres or Redis
+            containers (production uses managed Neon and Upstash).
+  Connections: Referenced by README's production command. Vercel/Render do not
+               use this file directly, but it documents the intended split.
+  Status: WORKING (not used by the documented free deployment).
+
+[008] docker-compose.test.yml
+  Path: teampulse/docker-compose.test.yml
+  Purpose: Isolated stack for integration/e2e runs.
+  What it does: Uses tmpfs for Postgres and Redis so data disappears, maps
+                alternate ports (5433, 6380, 8001, 8002, 3001), runs migrations
+                and seed before uvicorn, and sets test secrets.
+  Key code: backend command `alembic upgrade head && python scripts/seed.py &&
+            uvicorn ...`; frontend NEXT_PUBLIC_API_URL=http://localhost:8001;
+            NEXTAUTH_URL=http://localhost:3001 (matches Playwright baseURL).
+  Connections: Pairs with frontend/playwright.config.ts. No script in
+               package.json starts it automatically.
+  Status: WORKING (manual).
+
+--------------------------------------------------------------------------------
+4.2 AI SERVICE (9)
+--------------------------------------------------------------------------------
+
+[009] ai-service/.env.example
+  Path: teampulse/ai-service/.env.example
+  Purpose: Template for the AI service's own environment.
+  What it does: Documents GROQ_API_KEY, GROQ_MODEL and PORT.
+  Key code: GROQ_MODEL=llama-3.3-70b-versatile; PORT=8000.
+  Connections: Loaded by GroqSettings in groq_client.py when a .env exists.
+  Status: CONFIG.
+
+[010] ai-service/__init__.py
+  Path: teampulse/ai-service/__init__.py
+  Purpose: Marks the folder as a Python package.
+  What it does: Contains only a short comment (22 bytes); no imports.
+  Key code: None.
+  Connections: Not needed by uvicorn (`main:app` runs from inside the folder),
+               but harmless and conventional.
+  Status: CONFIG.
+
+[011] ai-service/Dockerfile
+  Path: teampulse/ai-service/Dockerfile
+  Purpose: Development container for the AI service.
+  What it does: Uses python:3.11-slim, installs requirements.txt, copies code,
+                exposes 8000 and runs uvicorn with --reload.
+  Key code: CMD uvicorn main:app --host 0.0.0.0 --port 8000 --reload.
+  Connections: Built by docker-compose.yml (service ai-service).
+  Status: WORKING.
+
+[012] ai-service/Dockerfile.prod
+  Path: teampulse/ai-service/Dockerfile.prod
+  Purpose: Production container.
+  What it does: Two-stage build, installs packages into a user directory,
+                creates a non-root user, adds a Python healthcheck and starts one
+                uvicorn worker on ${PORT:-8000}.
+  Key code: CMD ["sh","-c","exec uvicorn main:app --host 0.0.0.0 --port
+            ${PORT:-8000} --workers 1"].
+  Connections: Used by docker-compose.prod.yml. Docker-compose.prod's
+               healthcheck calls curl, which is not installed in this slim
+               image - a small mismatch.
+  Status: WORKING (minor healthcheck mismatch).
+
+[013] ai-service/groq_client.py
+  Path: teampulse/ai-service/groq_client.py
+  Purpose: The only place that knows how to talk to Groq.
+  What it does: Reads GROQ_API_KEY, GROQ_MODEL and GROQ_BASE_URL from env,
+                creates a 30-second httpx.AsyncClient, and posts OpenAI-style
+                chat completions. Raises ValueError if the key is missing.
+  Key code: POST {base}/chat/completions with Authorization: Bearer <key>;
+            payload contains model, messages, temperature, max_tokens. A module
+            level `groq_client = GroqClient()` is the shared instance.
+  Connections: Imported by main.py. Never exposed to the browser; the key stays
+               on the server.
+  Status: WORKING.
+
+[014] ai-service/main.py
+  Path: teampulse/ai-service/main.py
+  Purpose: HTTP surface of the AI microservice.
+  What it does: GET /health; POST /standup-summary (formats activities, calls
+                Groq, parses SUMMARY and numbered priorities, falls back to
+                counting completed/moved activities); POST /task-priority (asks
+                for SCORE/REASONING/ACTION, clamps 1-10, falls back to a due-date
+                and workload heuristic); GET /insights/{project_id} returns an
+                empty stub.
+  Key code: try/except around every Groq call, so the service always answers;
+            temperature 0.3; max_tokens 300 for summaries and 200 for priority.
+  Connections: Called by backend/app/services/ai.py at AI_SERVICE_URL. Its
+               request/response shapes mirror backend/app/schemas/ai.py.
+  Status: WORKING for the first two routes; STUB for /insights.
+
+[015] ai-service/prompts.py
+  Path: teampulse/ai-service/prompts.py
+  Purpose: Keeps prompt text out of route code and versioned in one place.
+  What it does: Defines STANDUP_SYSTEM_PROMPT (summary under 50 words, exactly
+                three actionable priorities, no markdown) and
+                TASK_PRIORITY_SYSTEM_PROMPT (1-10 scoring with due date,
+                workload, velocity and urgency keywords, plus action mapping).
+  Key code: Plain triple-quoted strings; no formatting or secrets.
+  Connections: Imported by main.py and passed as the system message.
+  Status: WORKING.
+
+[016] ai-service/requirements.txt
+  Path: teampulse/ai-service/requirements.txt
+  Purpose: Pins the AI service's Python dependencies.
+  What it does: fastapi 0.115.0, uvicorn[standard] 0.32.0, httpx 0.27.2,
+                pydantic 2.9.2, pydantic-settings 2.5.2, python-dotenv 1.0.1,
+                groq 0.8.0.
+  Key code: Exact versions, so builds are reproducible.
+  Connections: Installed by both Dockerfiles and by local pip setup. The groq
+               SDK is installed but the code uses httpx directly.
+  Status: CONFIG.
+
+[017] ai-service/schemas.py
+  Path: teampulse/ai-service/schemas.py
+  Purpose: Request/response contracts for the AI endpoints.
+  What it does: StandupSummaryRequest (user_name, activities list, date),
+                StandupSummaryResponse (summary, priorities),
+                TaskPriorityRequest (title, description, due date, workload,
+                velocity), TaskPriorityResponse (score 1-10, reasoning,
+                suggested_action restricted to four phrases).
+  Key code: Pydantic Field(ge=1, le=10) and a regex pattern for the action.
+  Connections: Used by main.py for validation and OpenAPI docs. Mirrors
+               backend/app/schemas/ai.py.
+  Status: WORKING.
+
+--------------------------------------------------------------------------------
+4.3 BACKEND ROOT AND MIGRATIONS (12)
+--------------------------------------------------------------------------------
+
+[018] backend/.dockerignore
+  Path: teampulse/backend/.dockerignore
+  Purpose: Keeps the Docker build context small and secret-free.
+  What it does: Excludes __pycache__, *.pyc, .venv, venv, .env, .env.local,
+                pytest/mypy caches and scripts/*.log.
+  Key code: Plain path patterns.
+  Connections: Applied automatically by `docker build` in backend/.
+  Status: CONFIG.
+
+[019] backend/.env.example
+  Path: teampulse/backend/.env.example
+  Purpose: Template for running the API without Docker.
+  What it does: Documents DATABASE_URL (asyncpg form), REDIS_URL, SECRET_KEY,
+                token lifetimes, OAuth clients, FRONTEND_URL, AI_SERVICE_URL,
+                ENVIRONMENT and optional SENTRY_DSN.
+  Key code: Example DATABASE_URL uses postgresql+asyncpg://...@localhost:5432/
+            teampulse.
+  Connections: Copy to backend/.env or .env.local. Settings reads `.env` by
+               default, so the README's `.env.local` advice needs an extra
+               export or rename.
+  Status: CONFIG.
+
+[020] backend/alembic.ini
+  Path: teampulse/backend/alembic.ini
+  Purpose: Alembic configuration.
+  What it does: Sets script_location=alembic and a default sqlalchemy.url.
+  Key code: The URL line is overridden at runtime by alembic/env.py with
+            settings.DATABASE_URL, so the ini value is only a fallback.
+  Connections: Read by the `alembic` command from the backend folder.
+  Status: CONFIG.
+
+[021] backend/Dockerfile
+  Path: teampulse/backend/Dockerfile
+  Purpose: Development API image.
+  What it does: python:3.11-slim, installs build-essential and libpq-dev,
+                installs requirements.txt, copies code, exposes 8000, runs
+                uvicorn with --reload.
+  Key code: CMD uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload.
+  Connections: Built by docker-compose.yml and docker-compose.test.yml.
+  Status: WORKING.
+
+[022] backend/Dockerfile.prod
+  Path: teampulse/backend/Dockerfile.prod
+  Purpose: Image used by Render (and any container host).
+  What it does: Installs runtime requirements only, copies code, creates a
+                non-root appuser, adds a Python healthcheck, and binds to
+                ${PORT:-8000} so Render's injected port works.
+  Key code: CMD ["sh","-c","exec uvicorn app.main:app --host 0.0.0.0 --port
+            ${PORT:-8000}"].
+  Connections: Selected in Render as ./Dockerfile.prod. Does not run Alembic
+               automatically; the seed script creates tables instead.
+  Status: WORKING.
+
+[023] backend/pyproject.toml
+  Path: teampulse/backend/pyproject.toml
+  Purpose: Tool configuration (not packaging).
+  What it does: Ruff line length 100 and a strict rule set, MyPy strict-ish
+                options excluding alembic, and pytest settings
+                (asyncio_mode=auto, testpaths=tests, verbose output).
+  Key code: [tool.pytest.ini_options], [tool.ruff], [tool.mypy].
+  Connections: Used by `ruff`, `mypy` and `pytest` commands in README.
+  Status: CONFIG.
+
+[024] backend/README.md
+  Path: teampulse/backend/README.md
+  Purpose: Backend-specific documentation.
+  What it does: Lists the stack, quick start, folder layout, endpoint groups,
+                conventions and environment variables.
+  Key code: Markdown endpoint lists. It says "7 tables" while the migration
+            creates 9; trust the migration.
+  Connections: Linked from the root README. Documentation only.
+  Status: WORKING (one stale table count).
+
+[025] backend/requirements.txt
+  Path: teampulse/backend/requirements.txt
+  Purpose: Runtime Python dependencies.
+  What it does: Pins FastAPI, Uvicorn, SQLAlchemy, Alembic, asyncpg, Pydantic,
+                pydantic-settings, python-jose, passlib/bcrypt, slugify,
+                multipart, httpx, redis, aioredis, python-dotenv,
+                email-validator and authlib.
+  Key code: Exact versions (for example fastapi==0.115.0).
+  Connections: Installed by both backend Dockerfiles.
+  Status: CONFIG.
+
+[026] backend/requirements-dev.txt
+  Path: teampulse/backend/requirements-dev.txt
+  Purpose: Extra packages for local development and CI.
+  What it does: Includes -r requirements.txt, then pytest, pytest-asyncio,
+                pytest-cov, httpx, ruff, mypy and types-passlib.
+  Key code: `-r requirements.txt` keeps runtime and dev versions in sync.
+  Connections: Used by the README's local backend setup.
+  Status: CONFIG.
+
+[027] backend/alembic/env.py
+  Path: teampulse/backend/alembic/env.py
+  Purpose: Tells Alembic how to connect and what the schema should look like.
+  What it does: Adds the backend folder to sys.path, imports Settings and
+                app.models.Base, overrides sqlalchemy.url with
+                settings.DATABASE_URL, and supports offline and async online
+                migrations.
+  Key code: async_engine_from_config + connection.run_sync(do_run_migrations);
+            target_metadata = Base.metadata.
+  Connections: Imports every model through app/models/__init__.py, which is why
+               `alembic revision --autogenerate` can see all tables.
+  Status: WORKING.
+
+[028] backend/alembic/script.py.mako
+  Path: teampulse/backend/alembic/script.py.mako
+  Purpose: Template for newly generated migration files.
+  What it does: Produces the standard revision header, upgrade() and
+                downgrade() functions with ${up_revision}, ${down_revision} and
+                message placeholders.
+  Key code: Mako syntax; no application logic.
+  Connections: Used by `alembic revision`, not at runtime.
+  Status: CONFIG.
+
+[029] backend/alembic/versions/001_initial.py
+  Path: teampulse/backend/alembic/versions/001_initial.py
+  Purpose: The complete initial database schema.
+  What it does: Creates nine tables in dependency order: users, oauth_accounts,
+                teams, team_members, projects, tasks, comments, activities,
+                refresh_tokens. Adds unique constraints (email, team slug,
+                provider+provider_user_id, team+user) and indexes for lookup
+                paths. downgrade() drops them in reverse order.
+  Key code: op.create_table(...) with UUID primary keys; indexes such as
+            idx_tasks_project_status (project_id, status),
+            idx_tasks_assignee_status, idx_tasks_due_date (partial, only
+            non-null), idx_comments_task_created, idx_activities_task_created;
+            refresh_tokens indexed on user_id, token_hash and expires_at.
+  Connections: Must stay in sync with app/models/*.py. The seed script calls
+               create_all() as well, so a fresh database can be built either way.
+  Status: WORKING.
+
+--------------------------------------------------------------------------------
+4.4 BACKEND APPLICATION ENTRY, API ROUTES (9)
+--------------------------------------------------------------------------------
+
+[030] backend/app/main.py
+  Path: teampulse/backend/app/main.py
+  Purpose: Creates and configures the FastAPI application.
+  What it does: On startup runs init_db() (creates missing tables) and
+                manager.initialize() (Redis pub/sub listener); on shutdown closes
+                the WebSocket manager, database engine and Redis. Registers
+                security-header and logging middleware, CORS from settings,
+                exception handlers and all /api/v1 routers. Exposes /health.
+  Key code: docs_url="/docs" if settings.DEBUG else None - production hides
+            Swagger. CORS allow_origins=settings.CORS_ORIGINS with credentials.
+  Connections: Imports core config/database/redis/exceptions, api.v1.api_router,
+               middleware and services.websocket.manager. Started by uvicorn as
+               app.main:app.
+  Status: WORKING.
+
+[031] backend/app/api/v1/__init__.py
+  Path: teampulse/backend/app/api/v1/__init__.py
+  Purpose: Single place that mounts every router under /api/v1.
+  What it does: Includes auth, teams, projects, tasks (both project-scoped and
+                direct routers), comments, ai and websocket. Adds a second
+                /api/v1/health endpoint.
+  Key code: api_router = APIRouter(prefix="/api/v1") then include_router calls.
+  Connections: Imported by app/main.py. Router files import their own services.
+  Status: WORKING.
+
+[032] backend/app/api/v1/ai.py
+  Path: teampulse/backend/app/api/v1/ai.py
+  Purpose: AI endpoints exposed to the frontend.
+  What it does: POST /ai/standup-summary and /ai/task-priority proxy to
+                AIService. GET /ai/insights/{project_id} loads tasks then asks
+                the AI service. POST /ai/my-standup is meant to gather the
+                current user's activity and generate a personal summary.
+  Key code: All routes require get_current_user. /my-standup declares `date: str`
+            as a function parameter (a required QUERY parameter) while the
+            frontend sends {date} in the JSON body, so FastAPI returns 422.
+            It also does `from app.models.activity import Activity` inside the
+            function, but no such module exists (Activity lives in
+            app/models/comment.py), so the route raises ImportError/500. Its
+            ActivityService call also passes a user id where a task id is
+            expected. This endpoint is effectively broken.
+  Connections: Uses AIService (HTTP to ai-service), ActivityService, TaskService,
+               and the User dependency.
+  Status: PARTIAL (two routes work; my-standup is broken; insights depends on
+          the AI service).
+
+[033] backend/app/api/v1/auth.py
+  Path: teampulse/backend/app/api/v1/auth.py
+  Purpose: Registration, login, token refresh, logout, profile and OAuth.
+  What it does: Sets httpOnly access_token (15 min) and refresh_token (7 days)
+                cookies, secure only when ENVIRONMENT=production, SameSite=Lax.
+                Routes: POST /register (201), /login, /refresh, /logout,
+                /change-password, /forgot-password, /reset-password,
+                /oauth/{provider}; GET /me; PATCH /me.
+  Key code: Rate limits are route dependencies: register 5/300s, login 5/300s,
+            refresh 10/60s, forgot 3/3600s, reset 3/3600s, oauth 10/300s.
+            Login also accepts the OAuth2PasswordRequestForm dependency for
+            Swagger convenience. Forgot/reset currently do not send email; they
+            exist as API surface only.
+  Connections: AuthService, security helpers, get_current_user, rate_limit,
+               settings. Cookies are read by dependencies/auth.py.
+  Status: WORKING for the main flows; forgot/reset are placeholders.
+
+[034] backend/app/api/v1/comments.py
+  Path: teampulse/backend/app/api/v1/comments.py
+  Purpose: Comment CRUD nested under a task.
+  What it does: POST/GET /tasks/{task_id}/comments, PATCH/DELETE
+                /tasks/{task_id}/comments/{comment_id}. Resolves the team for
+                permission checks, converts ORM rows to CommentResponse, and
+                logs activities.
+  Key code: Helpers _team_id_for_task, _actor, _to_response. Service enforces
+            that only the author (or owner/admin) can edit/delete.
+  Connections: CommentService, ActivityService, get_current_user.
+  Status: WORKING.
+
+[035] backend/app/api/v1/projects.py
+  Path: teampulse/backend/app/api/v1/projects.py
+  Purpose: Project CRUD under a team.
+  What it does: POST/GET /teams/{team_id}/projects and GET/PATCH/DELETE
+                /teams/{team_id}/projects/{project_id}. List/get return task
+                counts and member info via ProjectService.
+  Key code: Response models ProjectResponse / ProjectDetailResponse; deletes
+            return 204.
+  Connections: ProjectService and current-user dependency. Called by
+               frontend projectsApi.
+  Status: WORKING.
+
+[036] backend/app/api/v1/tasks.py
+  Path: teampulse/backend/app/api/v1/tasks.py
+  Purpose: Task CRUD, drag-move, assignment, AI priority and detail view.
+  What it does: Router prefix /projects/{project_id}/tasks for create/list/
+                get/patch/move/assign/priority/delete, plus a second
+                direct_router prefix /tasks with GET /{task_id} used by the
+                task detail page.
+  Key code: _team_id_for resolves the team for permission checks; _actor returns
+            the current user; _task_detail builds the full response with
+            assignee, reporter, comments and activities. POST /{task_id}/priority
+            calls AIService and returns a score but does not save it.
+  Connections: TaskService, AIService, ActivityService, schemas/task.py. Used by
+               frontend tasksApi.
+  Status: WORKING, with a duplicate GET /tasks/{id} handler (both routers expose
+          it) and AI scores that are not persisted.
+
+[037] backend/app/api/v1/teams.py
+  Path: teampulse/backend/app/api/v1/teams.py
+  Purpose: Team and membership management.
+  What it does: POST/GET /teams, GET/PATCH/DELETE /teams/{team_id},
+                POST /teams/{team_id}/members (invite by email),
+                PATCH/DELETE /teams/{team_id}/members/{user_id}.
+  Key code: Invitations look up an existing user by email; there is no email
+            send and no pending-invite table. Role changes are guarded by
+            TeamService (owner/admin rules).
+  Connections: TeamService, current user. Used by frontend teamsApi.
+  Status: WORKING (invite requires the person to have registered already).
+
+[038] backend/app/api/v1/websocket.py
+  Path: teampulse/backend/app/api/v1/websocket.py
+  Purpose: WebSocket entry points.
+  What it does: WS /ws/projects/{project_id}?token=... resolves the project's
+                team and checks membership; WS /ws/{team_id}?token=... checks
+                membership directly. Both authenticate the JWT from the query
+                string, then hand the socket to manager._serve().
+  Key code: The project route is declared before /{team_id} so "projects" is
+            not parsed as a UUID. Invalid token or non-member closes with code
+            1008. _serve loops on receive_json and cleans up on disconnect.
+  Connections: services/websocket.py (manager, authenticate_websocket),
+               models TeamMember/Project, get_db.
+  Status: WORKING.
+
+--------------------------------------------------------------------------------
+4.5 CORE INFRASTRUCTURE (5)
+--------------------------------------------------------------------------------
+
+[039] backend/app/core/config.py
+  Path: teampulse/backend/app/core/config.py
+  Purpose: One typed Settings object for the whole backend.
+  What it does: Reads .env via pydantic-settings. Defines APP_NAME,
+                ENVIRONMENT, DEBUG, DATABASE_URL, REDIS_URL, SECRET_KEY,
+                ALGORITHM, token lifetimes, four OAuth values, FRONTEND_URL,
+                AI_SERVICE_URL, CORS lists and SENTRY_DSN.
+  Key code: Field(validation_alias=...) for explicit env names; lru_cache on
+            get_settings() so the file is parsed once; CORS_ORIGINS defaults
+            include localhost:3000, localhost:5173 and the Vercel URL.
+  Connections: Imported by database, security, redis, main, AI service wrapper
+               and alembic/env.py.
+  Status: WORKING.
+
+[040] backend/app/core/database.py
+  Path: teampulse/backend/app/core/database.py
+  Purpose: Async SQLAlchemy engine, session factory and declarative Base.
+  What it does: database_url() rewrites postgresql:// to
+                postgresql+asyncpg:// and sslmode=require to ssl=require (Neon
+                compatibility). Creates an engine with pool_pre_ping, pool_size
+                10 and max_overflow 20, an async_sessionmaker with
+                expire_on_commit=False and autoflush=False, a get_db() generator,
+                and init_db/close_db helpers.
+  Key code: Base(DeclarativeBase); init_db() runs Base.metadata.create_all;
+            echo=settings.DEBUG logs SQL locally.
+  Connections: Every model inherits Base; every service receives a session from
+               get_db; main.py calls init_db on startup.
+  Status: WORKING.
+
+[041] backend/app/core/exceptions.py
+  Path: teampulse/backend/app/core/exceptions.py
+  Purpose: Consistent JSON errors.
+  What it does: Defines AppException plus NotFoundError (404), ForbiddenError
+                (403) and ValidationError (422), and registers handlers that
+                return {"error": ..., "detail": ...}.
+  Key code: register_exception_handlers(app) also handles generic Exception with
+            a 500 response.
+  Connections: Raised by services; registered in main.py.
+  Status: WORKING.
+
+[042] backend/app/core/redis.py
+  Path: teampulse/backend/app/core/redis.py
+  Purpose: Shared async Redis client and sliding-window rate limiter.
+  What it does: Lazily creates redis.from_url(settings.REDIS_URL,
+                decode_responses=True), closes it on shutdown, and implements
+                check_rate_limit() with a sorted set: remove old entries, add
+                now, count, set expiry.
+  Key code: pipeline zremrangebyscore/zadd/zcard/expire; returns
+            (allowed, retry_after_seconds).
+  Connections: Used by dependencies/rate_limit.py and services/websocket.py.
+  Status: WORKING.
+
+[043] backend/app/core/security.py
+  Path: teampulse/backend/app/core/security.py
+  Purpose: Password hashing and JWT creation/verification.
+  What it does: bcrypt through passlib; create_access_token and
+                create_refresh_token add exp, iat and type; decode_token uses
+                python-jose; verify_access_token/verify_refresh_token reject the
+                wrong type; create_token_pair embeds sub (user id), team_id and
+                role.
+  Key code: HS256 with settings.SECRET_KEY; 15-minute access tokens, 7-day
+            refresh tokens by default.
+  Connections: Used by auth routes, AuthService, dependencies/auth.py and the
+               WebSocket authenticator.
+  Status: WORKING.
+
+--------------------------------------------------------------------------------
+4.6 DEPENDENCIES (5)
+--------------------------------------------------------------------------------
+
+[044] backend/app/dependencies/__init__.py
+  Path: teampulse/backend/app/dependencies/__init__.py
+  Purpose: Package marker and convenient re-exports.
+  What it does: Exposes the dependency functions for imports elsewhere.
+  Key code: Import/re-export statements only.
+  Connections: Imported by route modules.
+  Status: CONFIG.
+
+[045] backend/app/dependencies/auth.py
+  Path: teampulse/backend/app/dependencies/auth.py
+  Purpose: Figure out who is calling and whether they may do it.
+  What it does: get_current_user reads the access_token cookie, falls back to
+                an Authorization: Bearer header, verifies the JWT, loads the
+                user, rejects missing/inactive users, and stores user, team_id
+                and role on request.state. get_optional_user returns None instead
+                of raising. require_role(*roles) builds a 403 check.
+                get_team_id returns the team from the token or raises 400.
+  Key code: Cookie(alias="access_token") + bearer fallback is what makes the
+            Vercel-to-Render cross-site setup work (cookies are not shared
+            between those domains).
+  Connections: Uses security.verify_access_token and AuthService.get_user.
+               Every protected route depends on it.
+  Status: WORKING.
+
+[046] backend/app/dependencies/database.py
+  Path: teampulse/backend/app/dependencies/database.py
+  Purpose: Short import path for the DB dependency.
+  What it does: Re-exports get_db from core/database.py.
+  Key code: from app.core.database import get_db.
+  Connections: Imported by routes that prefer this path. Note that
+               routes also import get_db from dependencies.auth, which itself
+               imports it from core.database - same function either way.
+  Status: CONFIG.
+
+[047] backend/app/dependencies/pagination.py
+  Path: teampulse/backend/app/dependencies/pagination.py
+  Purpose: Standard page/size parameters and response envelope.
+  What it does: get_pagination_params validates page >= 1 and 1 <= size <= 100
+                (defaults 1 and 20) and returns PaginationParams; a generic
+                PaginatedResponse carries items/total/page/size/pages.
+  Key code: Pydantic models plus a small dependency function.
+  Connections: Available for list endpoints. Comments use their own page/size
+               query parameters instead, so this helper is currently unused.
+  Status: PARTIAL (defined, not wired).
+
+[048] backend/app/dependencies/rate_limit.py
+  Path: teampulse/backend/app/dependencies/rate_limit.py
+  Purpose: Per-IP request throttling that survives Redis outages.
+  What it does: rate_limit(max_requests, window_seconds, key_prefix) returns a
+                Depends() that calls Redis; on any Redis error it falls back to
+                an in-process InMemoryRateLimiter with a threading.Lock. Returns
+                429 with a Retry-After header.
+  Key code: key = f"{prefix}:{client_ip}"; the in-memory fallback keeps a list
+            of timestamps per key.
+  Connections: Used by auth routes via dependencies=[rate_limit(...)].
+  Status: WORKING.
+
+--------------------------------------------------------------------------------
+4.7 MIDDLEWARE (3)
+--------------------------------------------------------------------------------
+
+[049] backend/app/middleware/__init__.py
+  Path: teampulse/backend/app/middleware/__init__.py
+  Purpose: Package marker.
+  What it does: Allows `from app.middleware.logging import ...`.
+  Key code: None/imports.
+  Connections: Imported by main.py indirectly.
+  Status: CONFIG.
+
+[050] backend/app/middleware/logging.py
+  Path: teampulse/backend/app/middleware/logging.py
+  Purpose: One log line per request.
+  What it does: A BaseHTTPMiddleware that records the start time, calls the
+                next handler, and logs method, path, status code and duration.
+  Key code: `logger.info("%s %s -> %s (%.1fms)", ...)`.
+  Connections: Added in main.py with app.add_middleware.
+  Status: WORKING.
+
+[051] backend/app/middleware/security_headers.py
+  Path: teampulse/backend/app/middleware/security_headers.py
+  Purpose: Basic hardening headers on API responses.
+  What it does: Adds X-Content-Type-Options: nosniff, X-Frame-Options: DENY,
+                Referrer-Policy: strict-origin-when-cross-origin and a
+                Permissions-Policy that disables camera, microphone and
+                geolocation.
+  Key code: response.headers.setdefault(...) for each header.
+  Connections: Added in main.py. The frontend has its own, larger CSP in
+               next.config.js.
+  Status: WORKING.
+
+--------------------------------------------------------------------------------
+4.8 MODELS (6)
+--------------------------------------------------------------------------------
+
+[052] backend/app/models/__init__.py
+  Path: teampulse/backend/app/models/__init__.py
+  Purpose: Import every model so metadata is complete.
+  What it does: Imports User, OAuthAccount, Team, TeamMember, Project, Task,
+                Comment, RefreshToken and re-exports Base.
+  Key code: __all__ list. Activity is defined in comment.py and imported
+            directly by services, but it is not re-exported here (it is still
+            registered because comment.py is imported).
+  Connections: Imported by alembic/env.py, core/database.py consumers and
+               seed.py.
+  Status: WORKING.
+
+[053] backend/app/models/comment.py
+  Path: teampulse/backend/app/models/comment.py
+  Purpose: Comment and Activity tables.
+  What it does: Comment has task_id, user_id, content, timestamps, cascade on
+                task/user delete, and an index on (task_id, created_at).
+                Activity has task_id, user_id, action, JSONB old_value/new_value,
+                created_at and the same composite index.
+  Key code: JSONB is used for before/after snapshots; relationships to Task and
+            User.
+  Connections: Task has comments/activities relationships; ActivityService writes
+               rows; task detail responses read them.
+  Status: WORKING.
+
+[054] backend/app/models/project.py
+  Path: teampulse/backend/app/models/project.py
+  Purpose: Project and Task tables.
+  What it does: Project belongs to a team (cascade delete) and has name,
+                description, key_prefix. Task belongs to a project and has
+                title, description, status, priority, assignee_id, reporter_id,
+                story_points, float position, due_date, completed_at and
+                timestamps. Indexes cover (project_id, status),
+                (assignee_id, status) and a partial index on due_date.
+  Key code: position is a float so a card can be inserted between two others
+            without renumbering the whole column.
+  Connections: Team.projects, User.assigned_tasks/reported_tasks, Comment,
+               Activity. Used by TaskService and ProjectService.
+  Status: WORKING.
+
+[055] backend/app/models/refresh_token.py
+  Path: teampulse/backend/app/models/refresh_token.py
+  Purpose: Server-side record of issued refresh tokens.
+  What it does: Stores user_id, token_hash (SHA-256 hex), expires_at, revoked and
+                created_at; indexes user_id, token_hash and expires_at.
+  Key code: Only the hash is stored, so a database leak does not expose usable
+            tokens.
+  Connections: Written by AuthService._store_refresh_token; read/rotated by
+               AuthService.refresh; deleted by logout and cleanup_expired_tokens.
+  Status: WORKING.
+
+[056] backend/app/models/team.py
+  Path: teampulse/backend/app/models/team.py
+  Purpose: Team and TeamMember tables.
+  What it does: Team has name, unique slug, description, owner_id. TeamMember
+                joins team and user with a role (default member) and joined_at,
+                with a unique (team_id, user_id) constraint and an index on
+                user_id.
+  Key code: cascade="all, delete-orphan" from Team to members and projects.
+  Connections: User.owned_teams/team_memberships, Project, TeamService.
+  Status: WORKING.
+
+[057] backend/app/models/user.py
+  Path: teampulse/backend/app/models/user.py
+  Purpose: User and OAuthAccount tables.
+  What it does: User stores unique email, nullable password_hash (OAuth-only
+                users have none), full_name, avatar_url, global role, is_active,
+                email_verified and timestamps. OAuthAccount stores provider,
+                provider_user_id, optional provider tokens, expiry, with a
+                unique (provider, provider_user_id) pair.
+  Key code: password_hash is nullable by design so Google/GitHub accounts work
+            without a local password.
+  Connections: Teams, memberships, tasks, comments, activities, refresh tokens
+               and OAuth accounts all reference this table.
+  Status: WORKING.
+
+--------------------------------------------------------------------------------
+4.9 SCHEMAS (7)
+--------------------------------------------------------------------------------
+
+[058] backend/app/schemas/__init__.py
+  Path: teampulse/backend/app/schemas/__init__.py
+  Purpose: Convenience re-exports of all Pydantic models.
+  What it does: Imports auth, team, project, task, comment and AI schemas and
+                lists them in __all__.
+  Key code: Import block only.
+  Connections: Lets modules write `from app.schemas import TaskCreate` instead of
+               the full path.
+  Status: CONFIG.
+
+[059] backend/app/schemas/ai.py
+  Path: teampulse/backend/app/schemas/ai.py
+  Purpose: Contracts between the backend and the AI service.
+  What it does: StandupSummaryRequest/Response, TaskPriorityRequest/Response,
+                ProjectInsightsRequest/Response. The priority response enforces
+                score 1-10 and one of four action strings; insights require
+                velocity_trend, workload_distribution and ai_summary.
+  Key code: Field(ge=1, le=10); Field(pattern="^(Do now|Schedule this
+            week|Delegate|Defer)$").
+  Connections: Used by api/v1/ai.py and services/ai.py. Mirrors
+               ai-service/schemas.py.
+  Status: WORKING.
+
+[060] backend/app/schemas/auth.py
+  Path: teampulse/backend/app/schemas/auth.py
+  Purpose: Auth request/response shapes.
+  What it does: RegisterRequest (EmailStr, password 8-100, full name), Login,
+                UpdateProfile, ChangePassword, OAuthLoginRequest (provider,
+                provider_user_id, email, name, avatar), TokenResponse,
+                RefreshRequest, UserResponse, MeResponse (user + teams),
+                TeamBrief, ForgotPassword, ResetPassword.
+  Key code: EmailStr validation and Field length limits; from_attributes=True so
+            ORM rows can be returned.
+  Connections: auth routes and AuthService.
+  Status: WORKING.
+
+[061] backend/app/schemas/comment.py
+  Path: teampulse/backend/app/schemas/comment.py
+  Purpose: Comment input/output shapes.
+  What it does: CommentCreate/CommentUpdate (content 1-5000 chars),
+                CommentResponse with nested UserBrief, and a local UserBrief
+                model.
+  Key code: Duplicates the UserBrief definition from schemas/task.py; both are
+            structurally identical.
+  Connections: comments routes and CommentService. The task detail response uses
+               the task.py version.
+  Status: WORKING (minor duplication).
+
+[062] backend/app/schemas/project.py
+  Path: teampulse/backend/app/schemas/project.py
+  Purpose: Project input/output shapes.
+  What it does: ProjectCreate (name, description, key_prefix 2-10 uppercase
+                letters), ProjectUpdate, ProjectResponse, ProjectDetailResponse
+                with task_counts dictionary and total task_count.
+  Key code: key_prefix pattern "^[A-Z]+$" is enforced before the service also
+            uppercases it.
+  Connections: projects routes and ProjectService.
+  Status: WORKING.
+
+[063] backend/app/schemas/task.py
+  Path: teampulse/backend/app/schemas/task.py
+  Purpose: Every task-related shape.
+  What it does: TaskCreate/Update (title, description, status enum, priority
+                enum, assignee, reporter, story points 0-100, due date),
+                TaskMove (status + float position), TaskAssign, TaskResponse,
+                TaskDetailResponse (assignee, reporter, comments, activities,
+                ai_priority), UserBrief, CommentResponse, ActivityResponse,
+                AIPriorityResponse.
+  Key code: Regex patterns restrict status to backlog/todo/in_progress/review/
+            done and priority to low/medium/high/urgent.
+  Connections: tasks routes, TaskService, AI priority route.
+  Status: WORKING.
+
+[064] backend/app/schemas/team.py
+  Path: teampulse/backend/app/schemas/team.py
+  Purpose: Team and membership shapes.
+  What it does: TeamCreate/Update, TeamResponse, TeamMemberCreate (email + role
+                admin/member/viewer), TeamMemberUpdate, TeamMemberResponse
+                (flattened user fields), TeamDetailResponse (members +
+                projects), ProjectBrief with task_count.
+  Key code: Role regex excludes "owner"; ownership is only assigned at team
+            creation or by transfer logic that does not currently exist.
+  Connections: teams routes and TeamService.
+  Status: WORKING.
+
+--------------------------------------------------------------------------------
+4.10 SERVICES - BUSINESS LOGIC (9)
+--------------------------------------------------------------------------------
+
+[065] backend/app/services/__init__.py
+  Path: teampulse/backend/app/services/__init__.py
+  Purpose: Package marker.
+  What it does: Allows service imports.
+  Key code: None.
+  Connections: Imported implicitly by every `from app.services.x import Y`.
+  Status: CONFIG.
+
+[066] backend/app/services/activity.py
+  Path: teampulse/backend/app/services/activity.py
+  Purpose: Write and read the task activity trail.
+  What it does: log() inserts an Activity with optional old/new JSON snapshots
+                and flushes; get_task_activities() returns the latest 100 for a
+                task, newest first, with the user eagerly loaded.
+  Key code: joinedload(Activity.user); order_by(created_at.desc()).
+  Connections: Called by TaskService and CommentService after create/update/
+               move/assign/delete/comment actions.
+  Status: WORKING.
+
+[067] backend/app/services/ai.py
+  Path: teampulse/backend/app/services/ai.py
+  Purpose: Backend-side client for the AI microservice, with fallbacks.
+  What it does: Posts to {AI_SERVICE_URL}/standup-summary and /task-priority,
+                GETs /insights/{id}, converts responses to backend schemas, and
+                on any exception returns a local heuristic summary or score.
+  Key code: httpx.AsyncClient(timeout=30); fallback counts completed/moved/
+            created activities; priority fallback starts at 5 and adjusts for
+            due date and workload. close() must be called by each route.
+  Connections: Used by api/v1/ai.py and api/v1/tasks.py. Never called from the
+               browser.
+  Status: WORKING.
+
+[068] backend/app/services/auth.py
+  Path: teampulse/backend/app/services/auth.py
+  Purpose: All account and token logic.
+  What it does: register() rejects duplicate emails and hashes the password;
+                login() verifies credentials; refresh() finds an active stored
+                token, compares its SHA-256 hash, revokes/rotates it and returns
+                a new pair; logout() revokes the user's active refresh tokens;
+                get_user/update_user; link_oauth_account and
+                find_or_create_oauth_user create or reuse accounts by provider
+                id/email; cleanup_expired_tokens deletes old rows.
+  Key code: hashlib.sha256(token.encode()).hexdigest() is what is stored, never
+            the raw token. Access tokens carry sub/team_id/role.
+  Connections: auth routes, dependencies/auth.py (get_user), security helpers,
+               RefreshToken model.
+  Status: WORKING.
+
+[069] backend/app/services/comment.py
+  Path: teampulse/backend/app/services/comment.py
+  Purpose: Comment rules.
+  What it does: create_comment checks project membership, saves, logs an
+                activity; get_task_comments paginates newest first;
+                update_comment allows only the author; delete_comment allows the
+                author or owner/admin; membership is resolved through task ->
+                project -> team.
+  Key code: offset/limit from page and size; user_role parameter for delete.
+  Connections: comments routes, ActivityService, Task/Project/TeamMember models.
+  Status: WORKING.
+
+[070] backend/app/services/project.py
+  Path: teampulse/backend/app/services/project.py
+  Purpose: Project rules.
+  What it does: Create/list/get/detail/update/delete. Every read or write first
+                checks team membership; management (update/delete) requires
+                owner/admin/member; detail counts tasks per status and in total.
+  Key code: selectinload(Project.tasks); task_counts built with a Counter/dict;
+            key_prefix uppercased on create.
+  Connections: projects routes, models, exceptions.
+  Status: WORKING.
+
+[071] backend/app/services/task.py
+  Path: teampulse/backend/app/services/task.py
+  Purpose: The largest service - task lifecycle and permissions.
+  What it does: create_task computes the next float position (max + 1) inside
+                the target status and logs "created"; get_project_tasks filters
+                by status, assignee, priority and a title/description search,
+                ordered by status then position; get_task eager-loads assignee,
+                reporter, comments and activities for the detail page;
+                update_task records changed fields in old/new JSON; move_task
+                updates status/position (or appends to the end) and logs
+                "moved"; assign_task logs "assigned"/"unassigned"; delete_task
+                logs "deleted" before removal.
+  Key code: role_hierarchy = {"viewer":0,"member":1,"admin":2,"owner":3} with
+            _get_project_with_permission; float positions leave room to insert
+            between cards.
+  Connections: tasks routes, ActivityService, AIService, models.
+  Status: WORKING.
+
+[072] backend/app/services/team.py
+  Path: teampulse/backend/app/services/team.py
+  Purpose: Team membership rules.
+  What it does: create_team slugifies the name, appends a 6-hex suffix if the
+                slug exists, creates the team and an owner membership in one
+                transaction. Reads load members+users and projects. update/
+                delete are restricted to owner/admin (delete owner-only in the
+                route/service). invite_member finds an existing user by email
+                and adds a membership. update_member_role enforces: only
+                owner/admin may change roles, the owner's role cannot change,
+                "owner" cannot be assigned, and only the owner may modify an
+                admin. remove_member prevents removing the owner.
+  Key code: slugify.slugify(name.lower())[:100]; duplicate member check before
+            insert.
+  Connections: teams routes, User/Team/TeamMember/Project models.
+  Status: WORKING.
+
+[073] backend/app/services/websocket.py
+  Path: teampulse/backend/app/services/websocket.py
+  Purpose: In-memory connection registry plus cross-process Redis fan-out.
+  What it does: ConnectionManager tracks team rooms, per-user sockets and
+                presence. connect() accepts the socket, joins the room and
+                broadcasts "online". disconnect() removes it and broadcasts
+                "offline". handle_message answers ping with pong and accepts
+                presence:set online/away/busy. broadcast_to_team sends JSON to
+                every socket in a room. _listen_redis runs a background task
+                with psubscribe("team:*") and rebroadcasts messages locally;
+                publish_event publishes to channel team:{team_id}. initialize()
+                starts the listener on startup, shutdown() cancels it.
+  Key code: authenticate_websocket() verifies the access token and reads
+            full_name from the JWT (note: login tokens do not currently include
+            full_name, so the display name is usually "Unknown").
+  Connections: api/v1/websocket.py, core/redis.py, main.py lifespan.
+  Status: PARTIAL. Connections, presence, ping and Redis fan-out work, but
+          publish_event() is never called anywhere in the codebase. TaskService
+          and CommentService only write activity rows. Therefore task/comment
+          events are never emitted, and the "real-time board" claim in the
+          README is not satisfied end to end. The missing calls are a small fix
+          (see remaining-tasks.txt). Display name is also usually "Unknown"
+          because the JWT does not contain full_name.
+
+--------------------------------------------------------------------------------
+4.11 SEED SCRIPT (1)
+--------------------------------------------------------------------------------
+
+[074] backend/scripts/seed.py
+  Path: teampulse/backend/scripts/seed.py
+  Purpose: Creates demo data so the app is not empty on first open.
+  What it does: Calls init_db() (create tables), then idempotently creates four
+                users (admin@teampulse.ac "SURYA" role admin, arjun@ (owner),
+                priya@ (admin), rohan@ (member), all password Passcode@9938),
+                one team "Acme Corp" (slug acme-corp), three projects (WEB
+                Website Redesign, MOB Mobile App v2, API API Integration) and
+                26 tasks (12 + 8 + 6) with assignees, priorities, story points
+                and due dates. Ends with db.commit and prints the demo accounts.
+  Key code: existence checks by email, team slug, project key_prefix and task
+            title keep repeated runs safe; positions are multiples of 10.
+  Connections: Imports app.core.database, app.models and security hashing. Reads
+               DATABASE_URL from the environment, so the same script can seed
+               local Postgres or Neon.
+  Status: WORKING. Note: DEPLOY.md's sample output mentions
+          john/jane/bob@teampulse.demo accounts that this script does not
+          create. The real accounts are the @teampulse.ac ones above.
+
+--------------------------------------------------------------------------------
+4.12 FRONTEND ROOT AND CONFIG (17)
+--------------------------------------------------------------------------------
+
+[075] frontend/.dockerignore
+  Path: teampulse/frontend/.dockerignore
+  Purpose: Keeps the frontend Docker build context small.
+  What it does: Excludes node_modules, .next, out, .env files, npm debug logs,
+                Dockerfiles and .dockerignore itself.
+  Key code: Path patterns only.
+  Connections: Used by both frontend Dockerfiles.
+  Status: CONFIG.
+
+[076] frontend/Dockerfile
+  Path: teampulse/frontend/Dockerfile
+  Purpose: Development frontend image.
+  What it does: node:20-alpine, NODE_ENV=development, npm install, copy source,
+                expose 3000, run `npm run dev` (hot reload).
+  Key code: No multi-stage build; suitable only for local development.
+  Connections: Built by docker-compose.yml with bind mounts for src and
+               node_modules.
+  Status: WORKING.
+
+[077] frontend/Dockerfile.prod
+  Path: teampulse/frontend/Dockerfile.prod
+  Purpose: Production image for self-hosting the frontend.
+  What it does: Builder stage runs npm ci and npm run build; runner stage copies
+                the standalone output, .next/static and public, creates a
+                non-root nextjs user and runs node server.js on port 3000.
+  Key code: Relies on next.config.js `output: 'standalone'`. Not used by Vercel,
+            which builds the app itself.
+  Connections: The documented deployment uses Vercel, so this file is an
+               alternative path (Docker/Render/Oracle).
+  Status: WORKING.
+
+[078] frontend/e2e/auth.spec.ts
+  Path: teampulse/frontend/e2e/auth.spec.ts
+  Purpose: Browser tests for login/registration.
+  What it does: Drives the login page, checks validation and successful
+                navigation, and covers logout/session behaviour.
+  Key code: Playwright `test`/`expect`, page.goto('/login'), form fills.
+  Connections: Requires the test stack at http://localhost:3001 with seeded
+               users.
+  Status: WORKING (not run as part of any CI).
+
+[079] frontend/e2e/kanban.spec.ts
+  Path: teampulse/frontend/e2e/kanban.spec.ts
+  Purpose: Browser tests for the board.
+  What it does: Logs in, opens a project, creates a task, and exercises drag/
+                column behaviour.
+  Key code: Playwright locators by role/text; drag simulation.
+  Connections: Depends on seeded project/task data and a running backend.
+  Status: WORKING (manual run).
+
+[080] frontend/e2e/teams.spec.ts
+  Path: teampulse/frontend/e2e/teams.spec.ts
+  Purpose: Browser tests for team pages.
+  What it does: Opens the team list, creates or views a team, and checks member
+                content.
+  Key code: Playwright page object style with role-based selectors.
+  Connections: Same test stack and seed requirements.
+  Status: WORKING (manual run).
+
+[081] frontend/playwright.config.ts
+  Path: teampulse/frontend/playwright.config.ts
+  Purpose: Playwright configuration.
+  What it does: testDir ./e2e, fully parallel, HTML reporter, baseURL
+                http://localhost:3001, trace on first retry, screenshot on
+                failure, Chromium/Firefox/WebKit projects, and a webServer that
+                runs `npm run dev` on 3001.
+  Key code: CI retries 2 and one worker; local retries 0.
+  Connections: Pairs with docker-compose.test.yml port mapping.
+  Status: CONFIG.
+
+[082] frontend/next.config.js
+  Path: teampulse/frontend/next.config.js
+  Purpose: Next.js build and runtime configuration.
+  What it does: Enables React strict mode and standalone output; adds security
+                headers to every route (CSP with connect-src built from
+                NEXT_PUBLIC_API_URL and NEXT_PUBLIC_WS_URL, HSTS, X-Frame-Options
+                DENY, nosniff, Referrer-Policy, Permissions-Policy); rewrites
+                /api/backend/:path* to the backend /api/v1/:path*.
+  Key code: The CSP is why a wrong NEXT_PUBLIC_API_URL blocks every request;
+            `output: 'standalone'` is what Dockerfile.prod copies.
+  Connections: Reads public env vars at build time; used by Next.js and Docker.
+  Status: WORKING.
+
+[083] frontend/next-env.d.ts
+  Path: teampulse/frontend/next-env.d.ts
+  Purpose: TypeScript references generated by Next.js.
+  What it does: Pulls in Next.js and image type declarations.
+  Key code: Reference comments only.
+  Connections: Included by tsconfig; do not edit by hand.
+  Status: CONFIG (generated).
+
+[084] frontend/package.json
+  Path: teampulse/frontend/package.json
+  Purpose: Dependency list and npm scripts.
+  What it does: Scripts dev/build/start/lint/type-check/test/test:e2e. Pins
+                Next 14.2.15, React 18.3.1, TanStack Query, Zustand, NextAuth
+                beta, axios, dnd-kit, Recharts, react-hook-form, zod, Tailwind
+                and testing tools.
+  Key code: `"test": "vitest"`, `"test:e2e": "playwright test"`,
+            `"type-check": "tsc --noEmit"`.
+  Connections: Consumed by npm, Dockerfiles and every setup guide.
+  Status: WORKING.
+
+[085] frontend/package-lock.json
+  Path: teampulse/frontend/package-lock.json
+  Purpose: Locks the exact dependency tree.
+  What it does: Records resolved versions and integrity hashes for every
+                package (about 192 KB).
+  Key code: Generated by npm; do not hand-edit.
+  Connections: `npm ci` in Dockerfile.prod requires it.
+  Status: CONFIG (generated).
+
+[086] frontend/postcss.config.js
+  Path: teampulse/frontend/postcss.config.js
+  Purpose: PostCSS pipeline for Tailwind.
+  What it does: Runs the tailwindcss and autoprefixer plugins.
+  Key code: module.exports with a plugins object.
+  Connections: Used automatically by Next.js during build/dev.
+  Status: CONFIG.
+
+[087] frontend/tailwind.config.ts
+  Path: teampulse/frontend/tailwind.config.ts
+  Purpose: Design tokens and content scanning.
+  What it does: Scans src/pages, src/components and src/app; extends colors from
+                CSS variables and a primary sky palette plus a surface palette;
+                defines radius, fonts, animations and the typography plugin
+                usage.
+  Key code: colors.border/input/ring/background/foreground map to
+            hsl(var(--...)); primary.500 = #0ea5e9.
+  Connections: Works with globals.css variables and every component's classes.
+  Status: WORKING.
+
+[088] frontend/tsconfig.json
+  Path: teampulse/frontend/tsconfig.json
+  Purpose: TypeScript compiler settings.
+  What it does: strict true, noEmit, bundler resolution, JSX preserve,
+                incremental, Next plugin, path alias "@/*" -> "./src/*", includes
+                Next types.
+  Key code: "strict": true is why the code needs explicit types for props and
+            API payloads.
+  Connections: Used by `next build`, `tsc --noEmit` and the editor.
+  Status: CONFIG.
+
+[089] frontend/tsconfig.tsbuildinfo
+  Path: teampulse/frontend/tsconfig.tsbuildinfo
+  Purpose: Incremental TypeScript build cache.
+  What it does: Stores file hashes and previous diagnostics so the next
+                type-check is faster.
+  Key code: Machine-generated JSON; no application logic.
+  Connections: Gitignored via *.tsbuildinfo, but present locally.
+  Status: CONFIG (generated, safe to delete).
+
+[090] frontend/vitest.config.ts
+  Path: teampulse/frontend/vitest.config.ts
+  Purpose: Unit-test configuration.
+  What it does: React plugin, jsdom environment, globals, setup file, includes
+                src/**/*.test.{ts,tsx}, v8 coverage, and the "@" alias.
+  Key code: resolve.alias maps @ to ./src.
+  Connections: Used by `npm test`; setup file mocks browser dependencies.
+  Status: WORKING.
+
+[091] frontend/vitest.setup.ts
+  Path: teampulse/frontend/vitest.setup.ts
+  Purpose: Shared test environment.
+  What it does: Imports jest-dom matchers and mocks next-auth/react (logged-in
+                session), next/navigation (router/pathname/params),
+                next-themes and sonner; sets NEXT_PUBLIC_API_URL and
+                NEXT_PUBLIC_WS_URL.
+  Key code: vi.mock factories returning the shapes components expect.
+  Connections: Loaded before every Vitest test file.
+  Status: WORKING.
+
+--------------------------------------------------------------------------------
+4.13 FRONTEND PAGES AND ROUTES (13)
+--------------------------------------------------------------------------------
+
+[092] frontend/src/app/(auth)/login/page.tsx
+  Path: teampulse/frontend/src/app/(auth)/login/page.tsx
+  Purpose: The sign-in screen at /login.
+  What it does: A react-hook-form + zod form (email, password). On submit it
+                first calls authApi.login so the browser receives the backend's
+                httpOnly cookies, then calls NextAuth signIn('credentials') to
+                create the session, then routes to callbackUrl (default
+                /dashboard). Google/GitHub buttons call signIn(provider).
+                Shows errors from the ?error= query string.
+  Key code: The two-step login is deliberate: NextAuth's authorize() runs on the
+            server and cannot set cookies in the user's browser.
+  Connections: authApi, NextAuth signIn, Card/Input/Button/Toaster components.
+  Status: WORKING.
+
+[093] frontend/src/app/(auth)/register/page.tsx
+  Path: teampulse/frontend/src/app/(auth)/register/page.tsx
+  Purpose: The sign-up screen at /register.
+  What it does: Validates full name, email and password (min 8), posts to
+                authApi.register, then automatically signs in with the new
+                credentials and goes to /dashboard. On failure it shows the
+                backend detail, or a friendly "email already registered"
+                message for a 400.
+  Key code: registerSchema mirrors the backend rules (8-100 chars password).
+  Connections: authApi, NextAuth signIn, router.
+  Status: WORKING.
+
+[094] frontend/src/app/(dashboard)/dashboard/page.tsx
+  Path: teampulse/frontend/src/app/(dashboard)/dashboard/page.tsx
+  Purpose: The post-login home page.
+  What it does: Loads teams, then loads tasks assigned to the current user
+                across all projects and keeps the five nearest due dates. Shows
+                a due-soon card, the StandupSummary card, velocity and workload
+                charts, a team list and a "Recent Activity coming soon" card.
+  Key code: The velocity query returns hard-coded sprint numbers and the
+            workload query returns three hard-coded names, so both charts are
+            MOCK data. "My tasks" is real.
+  Connections: teamsApi, tasksApi, aiApi via StandupSummary, Recharts wrappers,
+               useSession.
+  Status: PARTIAL (real task list; mock charts; standup calls a broken route).
+
+[095] frontend/src/app/(dashboard)/settings/page.tsx
+  Path: teampulse/frontend/src/app/(dashboard)/settings/page.tsx
+  Purpose: Personal settings at /settings.
+  What it does: Four tabs. Profile updates full_name through authApi.updateProfile
+                and shows the session email/avatar. Security changes password via
+                authApi.changePassword, lists "Connected Accounts" as static
+                text, and shows a Delete Account button. Notifications edits
+                delivery/activity/digest switches and saves them to
+                localStorage under "teampulse:notifications". Appearance
+                switches theme and density.
+  Key code: Theme uses next-themes useTheme; toasts come from sonner. Delete
+            Account is not wired to any API call, and localStorage preferences
+            never reach the server.
+  Connections: authApi, useSession, useTheme, Tabs, Toaster/sonner.
+  Status: PARTIAL (profile/password/theme work; notifications local-only;
+          delete account does nothing).
+
+[096] frontend/src/app/(dashboard)/tasks/[taskId]/page.tsx
+  Path: teampulse/frontend/src/app/(dashboard)/tasks/[taskId]/page.tsx
+  Purpose: Full task detail at /tasks/<uuid>.
+  What it does: Loads the task (tasksApi.get) and comments, renders TaskHeader,
+                a status/priority edit modal, a comments panel with composer,
+                ActivityLog, and an AI priority panel. Subscribes to project
+                WebSocket events to append/remove comments and update the task
+                live. Delete removes the task and routes back.
+  Key code: generateAIPriorityMutation sends assignee_workload: 0 and
+            project_velocity: 0, so the score ignores real workload; the result
+            is kept only in component state. updateTaskMutation uses
+            task.project_id, which is why the project-scoped PATCH route works.
+  Connections: tasksApi, commentsApi, aiApi, useWebSocket, TaskHeader,
+               CommentThread, ActivityLog, PriorityIndicator, Modal/Dropdown.
+  Status: PARTIAL (task editing and comments work; AI score is not persisted;
+          activity list comes from the detail payload and only refreshes when
+          the task is re-fetched).
+
+[097] frontend/src/app/(dashboard)/teams/page.tsx
+  Path: teampulse/frontend/src/app/(dashboard)/teams/page.tsx
+  Purpose: Team list at /teams.
+  What it does: Loads teams, shows a loading spinner, an empty state with a
+                Create Team button, or a responsive grid of TeamCard. Creates a
+                team through a modal and invalidates the ["teams"] query.
+  Key code: createMutation uses teamsApi.create; every card receives
+            userRole="member" because the page does not look up the real role.
+  Connections: teamsApi, TeamCard, CreateTeamModal, TanStack Query.
+  Status: WORKING (role label is cosmetic and often wrong).
+
+[098] frontend/src/app/(dashboard)/teams/[teamId]/page.tsx
+  Path: teampulse/frontend/src/app/(dashboard)/teams/[teamId]/page.tsx
+  Purpose: Team overview at /teams/<id or slug>.
+  What it does: Fetches the team list first, finds a match by id or slug, then
+                fetches full detail. Four tabs: Overview (counts + recent
+                projects + members), Projects (cards linking to the board),
+                Members (MemberTable with role/remove actions), Settings
+                (owner only; name/description inputs and a non-functional
+                Delete Team button).
+  Key code: isOwner compares team.owner_id with a member's user_id - a
+            roundabout check that always resolves to owner_id === owner_id when
+            the owner is in the member list. MemberTable is passed
+            currentUserId="" and currentUserRole="owner", so the UI always
+            believes it can manage everyone. Settings inputs are uncontrolled
+            and there is no save handler.
+  Connections: teamsApi, projectsApi, MemberTable, InviteModal, CreateTeamModal
+               (imported but unused), Tabs, Badge, Avatar.
+  Status: PARTIAL (viewing, inviting, role changes and removal work; settings
+          save and delete do not).
+
+[099] frontend/src/app/(dashboard)/teams/[teamId]/projects/[projectId]/page.tsx
+  Path: teampulse/frontend/src/app/(dashboard)/teams/[teamId]/projects/[projectId]/page.tsx
+  Purpose: The Kanban board page.
+  What it does: Loads project metadata and all tasks, renders a header with
+                back/analytics/settings buttons and the KanbanBoard. A move
+                mutation calls tasksApi.move and invalidates the task query.
+  Key code: `NO_TASKS: Task[] = []` is a stable empty array so the board's
+            effect does not loop. The Analytics and Settings links point to
+            routes that do not exist (no analytics/settings page folders).
+  Connections: projectsApi, tasksApi, KanbanBoard, useSession.
+  Status: WORKING for the board; two broken navigation links.
+
+[100] frontend/src/app/api/auth/[...nextauth]/route.ts
+  Path: teampulse/frontend/src/app/api/auth/[...nextauth]/route.ts
+  Purpose: NextAuth's HTTP endpoint.
+  What it does: Imports handlers and auth from src/lib/auth.ts and re-exports
+                GET and POST.
+  Key code: `export const { GET, POST } = handlers`.
+  Connections: src/lib/auth.ts. Every /api/auth/* request lands here.
+  Status: WORKING.
+
+[101] frontend/src/app/globals.css
+  Path: teampulse/frontend/src/app/globals.css
+  Purpose: Global styles and design tokens.
+  What it does: Tailwind base/components/utilities, light and dark CSS variable
+                themes, base element styles, and component classes such as
+                .btn-primary, .btn-secondary, .card, .kanban-card,
+                .kanban-column, .label and animations (fade-in, slide-up).
+  Key code: :root and .dark blocks define --background, --foreground, --primary,
+            --border, --radius, etc. consumed by tailwind.config.ts.
+  Connections: Imported once in app/layout.tsx. Used by every page.
+  Status: WORKING.
+
+[102] frontend/src/app/layout.tsx
+  Path: teampulse/frontend/src/app/layout.tsx
+  Purpose: The root HTML shell.
+  What it does: Loads the Inter font as a CSS variable, sets the page title and
+                description, renders <html lang="en"> with suppressHydrationWarning,
+                applies font/antialiasing classes and wraps children in
+                <Providers>.
+  Key code: metadata.title = "TeamPulse - Real-time Team Collaboration".
+  Connections: Providers (session + query client) and globals.css. This is the
+               ONLY layout in the app - there is no (dashboard)/layout.tsx, so
+               Sidebar/Navbar are not rendered by any page.
+  Status: WORKING (missing dashboard shell - see remaining-tasks.txt).
+
+[103] frontend/src/app/page.tsx
+  Path: teampulse/frontend/src/app/page.tsx
+  Purpose: Public landing page at /.
+  What it does: Shows the TeamPulse name, tagline, "Get Started" and "Demo
+                Login" buttons (both go to /login), and three feature cards:
+                real-time Kanban, AI insights, team workspaces.
+  Key code: Server component by default (no "use client"); uses Link and
+            Tailwind classes.
+  Connections: Links into the (auth) group.
+  Status: WORKING.
+
+[104] frontend/src/app/providers.tsx
+  Path: teampulse/frontend/src/app/providers.tsx
+  Purpose: Client-side context providers.
+  What it does: Creates one QueryClient (staleTime 60s, no refetch on window
+                focus, one retry) and wraps the app in SessionProvider and
+                QueryClientProvider.
+  Key code: useState(() => new QueryClient(...)) keeps the client stable across
+            renders.
+  Connections: Used by app/layout.tsx; enables useSession and all useQuery calls.
+  Status: WORKING.
+
+--------------------------------------------------------------------------------
+4.14 AI AND CHART COMPONENTS (4)
+--------------------------------------------------------------------------------
+
+[105] frontend/src/components/ai/PriorityIndicator.tsx
+  Path: teampulse/frontend/src/components/ai/PriorityIndicator.tsx
+  Purpose: Visualises an AI priority result.
+  What it does: Given a score, reasoning and suggested action, shows a coloured
+                score badge, the action label and the reasoning text; handles a
+                loading state.
+  Key code: Colour thresholds by score (for example high scores red/orange).
+  Connections: Used by the task detail page after aiApi.taskPriority resolves.
+  Status: WORKING (display only).
+
+[106] frontend/src/components/ai/StandupSummary.tsx
+  Path: teampulse/frontend/src/components/ai/StandupSummary.tsx
+  Purpose: "Today's Standup" card on the dashboard.
+  What it does: A button calls aiApi.myStandup(targetDate), stores summary and
+                priorities in local state and renders them; a Refresh button
+                repeats the call. Errors are only logged to the console.
+  Key code: aiApi.myStandup posts { date } in the body while the backend expects
+            a query parameter, so this call currently returns 422. The backend
+            route has an additional import bug. The card therefore stays empty.
+  Connections: aiApi, Card/Button/LoadingSpinner. Rendered by the dashboard page.
+  Status: BROKEN upstream (UI itself is fine).
+
+[107] frontend/src/components/charts/VelocityChart.tsx
+  Path: teampulse/frontend/src/components/charts/VelocityChart.tsx
+  Purpose: Sprint velocity line chart.
+  What it does: Receives {sprint, completed, committed}[] and draws two Recharts
+                lines with a legend, tooltip and empty state.
+  Key code: ResponsiveContainer height 300; committed is sky blue, completed is
+            green.
+  Connections: Dashboard passes mock data.
+  Status: WORKING (presentation); data is MOCK.
+
+[108] frontend/src/components/charts/WorkloadChart.tsx
+  Path: teampulse/frontend/src/components/charts/WorkloadChart.tsx
+  Purpose: Per-person workload bar chart.
+  What it does: Receives {user, tasks, points}[] and draws a horizontal stacked
+                pair of bars with per-person colours and an empty state.
+  Key code: COLORS array cycled by index; radius on the right corners.
+  Connections: Dashboard passes mock data.
+  Status: WORKING (presentation); data is MOCK.
+
+--------------------------------------------------------------------------------
+4.15 KANBAN COMPONENTS (4)
+--------------------------------------------------------------------------------
+
+[109] frontend/src/components/kanban/KanbanBoard.tsx
+  Path: teampulse/frontend/src/components/kanban/KanbanBoard.tsx
+  Purpose: The board's state container.
+  What it does: Copies initialTasks into local state and re-syncs when the
+                query changes; groups tasks into the five KANBAN_COLUMNS, sorted
+                by position; handles optimistic moves (update state, then call
+                onTaskMove), create (tasksApi.create with the column's status),
+                edit, and WebSocket events (ignore own events, apply moves,
+                invalidate on create, remove on delete). Opens TaskModal for
+                create/edit.
+  Key code: `if (data.user.id === currentUserId) return` prevents echo
+            duplicates; invalidates ["tasks", projectId] after create.
+  Connections: KanbanColumn, TaskModal, useWebSocket, tasksApi, TanStack Query.
+  Status: WORKING locally. The WebSocket handlers are correct but the backend
+          never publishes task events, so in practice only this browser's own
+          optimistic updates are seen.
+
+[110] frontend/src/components/kanban/KanbanCard.tsx
+  Path: teampulse/frontend/src/components/kanban/KanbanCard.tsx
+  Purpose: One draggable task card.
+  What it does: Uses dnd-kit useSortable for transform/transition, and also
+                sets HTML5 drag data (taskId, sourceStatus, sourceIndex) for the
+                column's drop handler. Shows title, priority badge, description
+                excerpt, assignee avatar, due date (or "Overdue") and story
+                points. Keyboard accessible (Enter/Space opens the task).
+  Key code: `draggable` plus spread sortable attributes/listeners; opacity 0.5
+            while dragging.
+  Connections: KanbanColumn (renders it), dnd-kit, Avatar/Badge, utils.
+  Status: WORKING.
+
+[111] frontend/src/components/kanban/KanbanColumn.tsx
+  Path: teampulse/frontend/src/components/kanban/KanbanColumn.tsx
+  Purpose: One status column.
+  What it does: Registers as a dnd-kit droppable, handles dragover/drop, reads
+                the dragged task from dataTransfer and calls
+                onTaskMove(taskId, status, tasks.length * 10) - i.e. always
+                appends to the end of the target column. Shows title, count,
+                cards, an empty "Drop tasks here" area and an Add task button.
+  Key code: The position is computed from the column length, not from the drop
+            index, so dropping between two cards still sends the card to the
+            bottom.
+  Connections: KanbanCard, useDroppable, Button, types.
+  Status: WORKING (drop position is coarse).
+
+[112] frontend/src/components/kanban/TaskModal.tsx
+  Path: teampulse/frontend/src/components/kanban/TaskModal.tsx
+  Purpose: Create/edit task dialog.
+  What it does: react-hook-form + zod fields: title, description, status,
+                priority, assignee, story points and due date. Calls onSubmit for
+                create or onUpdate for edit; closes on success. Edit mode shows
+                the current assignee.
+  Key code: `members = []` default and the board never passes members, so the
+            assignee dropdown only ever contains "Unassigned". due_date is
+            converted from datetime-local to ISO before submit.
+  Connections: Modal, Input, Button, constants (statuses/priorities/story
+               points), KanbanBoard.
+  Status: PARTIAL (everything works except choosing an assignee).
+
+--------------------------------------------------------------------------------
+4.16 LAYOUT COMPONENTS (4, currently unused by pages)
+--------------------------------------------------------------------------------
+
+[113] frontend/src/components/layout/Navbar.tsx
+  Path: teampulse/frontend/src/components/layout/Navbar.tsx
+  Purpose: Top navigation bar (desktop and mobile).
+  What it does: Fixed header that shifts with the sidebar width, duplicate
+                dashboard/teams/settings links, theme dropdown (light/dark/
+                system), notification bell (no action), user dropdown with
+                Profile/Settings/Log out, and a Toaster.
+  Key code: Theme icons mapped by name; logout calls useAuth().logout.
+  Connections: useUIStore, useAuth, Dropdown, Avatar, Toaster. NOT imported by
+               any page or layout, so it is currently dead code.
+  Status: PARTIAL (built, not mounted).
+
+[114] frontend/src/components/layout/PageHeader.tsx
+  Path: teampulse/frontend/src/components/layout/PageHeader.tsx
+  Purpose: Consistent page title block.
+  What it does: Renders a title, optional description and optional action slot
+                on the right.
+  Key code: Simple flex layout; children/action typed as ReactNode.
+  Connections: Used by dashboard, teams, team detail and settings pages.
+  Status: WORKING.
+
+[115] frontend/src/components/layout/ProtectedRoute.tsx
+  Path: teampulse/frontend/src/components/layout/ProtectedRoute.tsx
+  Purpose: Client-side auth guard.
+  What it does: Uses useSession; while loading shows a spinner, when
+                unauthenticated pushes /login and renders a fallback, otherwise
+                renders children.
+  Key code: useEffect on status/router.
+  Connections: NOT imported anywhere. Pages are effectively protected only by
+               the axios 401 interceptor that redirects to /login.
+  Status: PARTIAL (built, not mounted).
+
+[116] frontend/src/components/layout/Sidebar.tsx
+  Path: teampulse/frontend/src/components/layout/Sidebar.tsx
+  Purpose: Collapsible left navigation.
+  What it does: Fixed aside, 64px or 16px wide, logo, Dashboard/Teams/Settings
+                links with active highlighting, user name/email and logout.
+  Key code: useUIStore sidebarOpen/toggleSidebar; usePathname for active state.
+  Connections: useUIStore, useAuth, Button. NOT imported anywhere, so the app
+               currently has no sidebar.
+  Status: PARTIAL (built, not mounted).
+
+--------------------------------------------------------------------------------
+4.17 TASK COMPONENTS (4)
+--------------------------------------------------------------------------------
+
+[117] frontend/src/components/tasks/ActivityLog.tsx
+  Path: teampulse/frontend/src/components/tasks/ActivityLog.tsx
+  Purpose: Human-readable task history.
+  What it does: Maps action keys (created, moved, updated, assigned, commented,
+                completed, deleted) to labels and emoji, shows actor avatar/name,
+                relative time, and old/new JSON snippets (truncated to 100
+                characters) in red/green.
+  Key code: actionLabels/actionIcons lookup objects with fallbacks.
+  Connections: Task detail page passes task.activities.
+  Status: WORKING.
+
+[118] frontend/src/components/tasks/CommentThread.tsx
+  Path: teampulse/frontend/src/components/tasks/CommentThread.tsx
+  Purpose: Comment list with inline edit/delete.
+  What it does: Shows avatar, author, relative time, content; own comments get
+                Edit/Delete controls. Edit switches to a textarea with Save/
+                Cancel; delete asks for confirmation. Mutations invalidate
+                ["comments", taskId].
+  Key code: commentsApi.update/delete; local editingId/editContent state.
+  Connections: Task detail page, commentsApi, TanStack Query, Avatar/Button.
+  Status: WORKING (no replies/threading despite the name).
+
+[119] frontend/src/components/tasks/PriorityBadge.tsx
+  Path: teampulse/frontend/src/components/tasks/PriorityBadge.tsx
+  Purpose: Small coloured priority label.
+  What it does: Renders a Badge for low/medium/high/urgent using a
+                getPriorityColor helper (also exported).
+  Key code: Colour map by priority string.
+  Connections: Available for task UI; the Kanban card and TaskHeader use the
+               shared utils version instead.
+  Status: WORKING (lightly duplicated).
+
+[120] frontend/src/components/tasks/TaskHeader.tsx
+  Path: teampulse/frontend/src/components/tasks/TaskHeader.tsx
+  Purpose: Read-only task summary block.
+  What it does: Shows title, status/priority/story-point badges, assignee,
+                reporter, due date (red when overdue) and the description with
+                preserved line breaks.
+  Key code: new Date(due_date) < new Date() drives the overdue colour.
+  Connections: Task detail page.
+  Status: WORKING.
+
+--------------------------------------------------------------------------------
+4.18 TEAM COMPONENTS (4)
+--------------------------------------------------------------------------------
+
+[121] frontend/src/components/teams/CreateTeamModal.tsx
+  Path: teampulse/frontend/src/components/teams/CreateTeamModal.tsx
+  Purpose: New-team dialog.
+  What it does: Name and description fields with zod validation (name required,
+                max lengths), submit button with loading state, closes on
+                success.
+  Key code: createTeamSchema; onSubmit prop is awaited.
+  Connections: Teams page and (unused) team detail import.
+  Status: WORKING.
+
+[122] frontend/src/components/teams/InviteModal.tsx
+  Path: teampulse/frontend/src/components/teams/InviteModal.tsx
+  Purpose: Add-member dialog.
+  What it does: Email field plus a role select (admin/member/viewer), validates
+                with zod and submits to teamsApi.inviteMember.
+  Key code: inviteSchema; no email is actually sent - the backend adds an
+            existing registered user directly.
+  Connections: Team detail page, teamsApi.
+  Status: WORKING.
+
+[123] frontend/src/components/teams/MemberTable.tsx
+  Path: teampulse/frontend/src/components/teams/MemberTable.tsx
+  Purpose: Member management table.
+  What it does: Lists avatar, name, email, role badge and joined date, with a
+                row menu to change role (admin/member/viewer) or remove the
+                member. Disables actions for the current user.
+  Key code: Props currentUserId/currentUserRole decide which actions appear;
+            the team page passes "" and "owner", so all actions are visible.
+  Connections: Team detail page, teamsApi mutations, Dropdown, Avatar, Badge.
+  Status: WORKING (permission props are wrong, server still enforces rules).
+
+[124] frontend/src/components/teams/TeamCard.tsx
+  Path: teampulse/frontend/src/components/teams/TeamCard.tsx
+  Purpose: Team summary card in the team grid.
+  What it does: Links to the team page, shows icon, name, @slug, description,
+                role badge, and a hover dropdown whose actions are empty
+                callbacks.
+  Key code: menuItems with no-op onClick handlers.
+  Connections: Teams page. The dropdown items do nothing.
+  Status: PARTIAL (navigation works; menu is decorative).
+
+--------------------------------------------------------------------------------
+4.19 UI PRIMITIVES AND TESTS (12)
+--------------------------------------------------------------------------------
+
+[125] frontend/src/components/ui/Avatar.tsx
+  Path: teampulse/frontend/src/components/ui/Avatar.tsx
+  Purpose: User image or initials fallback.
+  What it does: If src is present renders an <img>; otherwise a coloured circle/
+                square with initials from getInitials(name), sized sm/md/lg/xl.
+  Key code: sizeClasses map; optional onClick.
+  Connections: Used across cards, headers, comments, member tables.
+  Status: WORKING.
+
+[126] frontend/src/components/ui/Badge.tsx
+  Path: teampulse/frontend/src/components/ui/Badge.tsx
+  Purpose: Small status pill.
+  What it does: Variants default/secondary/outline/destructive/success, optional
+                className merge via cn.
+  Key code: BadgeProps extends HTMLAttributes<HTMLSpanElement>.
+  Connections: Everywhere statuses and priorities are shown.
+  Status: WORKING.
+
+[127] frontend/src/components/ui/Button.test.tsx
+  Path: teampulse/frontend/src/components/ui/Button.test.tsx
+  Purpose: Unit tests for Button.
+  What it does: Renders the component with Testing Library, checks the label,
+                click handler, disabled state and variants/loading behaviour.
+  Key code: render/screen/fireEvent or user-event from @testing-library/react.
+  Connections: Run by `npm test` through vitest.setup.ts.
+  Status: WORKING (small coverage).
+
+[128] frontend/src/components/ui/Button.tsx
+  Path: teampulse/frontend/src/components/ui/Button.tsx
+  Purpose: Shared button.
+  What it does: Variants primary/secondary/outline/ghost/destructive, sizes
+                sm/md/lg/icon, loading spinner + disabled handling, ref forwarding.
+  Key code: cn(base, variants[variant], sizes[size], className).
+  Connections: Used by nearly every interactive UI piece.
+  Status: WORKING.
+
+[129] frontend/src/components/ui/Card.test.tsx
+  Path: teampulse/frontend/src/components/ui/Card.test.tsx
+  Purpose: Unit tests for the Card family.
+  What it does: Verifies Card, CardHeader, CardTitle, CardDescription,
+                CardContent and CardFooter render children and merge classes.
+  Key code: Testing Library queries by text/role.
+  Connections: Run by Vitest.
+  Status: WORKING (small coverage).
+
+[130] frontend/src/components/ui/Card.tsx
+  Path: teampulse/frontend/src/components/ui/Card.tsx
+  Purpose: Card container and its sections.
+  What it does: Exports Card, CardHeader, CardTitle, CardDescription,
+                CardContent, CardFooter with consistent borders, padding and
+                typography.
+  Key code: Each is a small function component spreading div props and merging
+            className with cn.
+  Connections: Dashboard, settings, team pages, charts, AI card.
+  Status: WORKING.
+
+[131] frontend/src/components/ui/Dropdown.tsx
+  Path: teampulse/frontend/src/components/ui/Dropdown.tsx
+  Purpose: Click-to-open menu.
+  What it does: Takes a trigger node and DropdownItem[]; toggles a panel, closes
+                on outside click, renders icons and labels, supports a
+                destructive style and dividers.
+  Key code: useEffect document click listener; useRef wrapper.
+  Connections: Navbar, MemberTable, TeamCard, task detail.
+  Status: WORKING.
+
+[132] frontend/src/components/ui/Input.tsx
+  Path: teampulse/frontend/src/components/ui/Input.tsx
+  Purpose: Labelled text input.
+  What it does: Forwards refs (needed by react-hook-form), renders label, input
+                and error message, supports an icon slot and required styling.
+  Key code: InputProps extends InputHTMLAttributes; error string renders red text.
+  Connections: Login, register, modals, settings.
+  Status: WORKING.
+
+[133] frontend/src/components/ui/LoadingSpinner.tsx
+  Path: teampulse/frontend/src/components/ui/LoadingSpinner.tsx
+  Purpose: Loading indicator.
+  What it does: Exports LoadingSpinner (sizes sm/md/lg, optional label) and
+                LoadingOverlay (full-area centred spinner).
+  Key code: CSS border + animate-spin; SVG-free.
+  Connections: Pages while queries load, Button loading state patterns.
+  Status: WORKING.
+
+[134] frontend/src/components/ui/Modal.tsx
+  Path: teampulse/frontend/src/components/ui/Modal.tsx
+  Purpose: Accessible dialog.
+  What it does: Returns null when closed; otherwise renders a backdrop and a
+                centred panel with title/description, close button, size prop
+                and ARIA dialog attributes; clicking the backdrop closes it.
+  Key code: role="dialog", aria-modal, aria-labelledby; stopPropagation on the
+            panel. No focus trap and no Escape handler.
+  Connections: TaskModal, CreateTeamModal, InviteModal, task edit modal.
+  Status: WORKING (basic accessibility).
+
+[135] frontend/src/components/ui/Tabs.tsx
+  Path: teampulse/frontend/src/components/ui/Tabs.tsx
+  Purpose: Compound tabs component.
+  What it does: Tabs holds value state and a context; TabsList/TabsTrigger render
+                buttons and TabsContent shows only the active panel. Supports
+                defaultValue and onValueChange.
+  Key code: React context + useTabsContext guard.
+  Connections: Team detail page and settings page.
+  Status: WORKING.
+
+[136] frontend/src/components/ui/Toaster.tsx
+  Path: teampulse/frontend/src/components/ui/Toaster.tsx
+  Purpose: Renders app toasts from the Zustand store.
+  What it does: Fixed bottom-right stack; each toast has an icon and colour by
+                type (success/error/warning/info) and a dismiss button.
+  Key code: Reads toasts/removeToast from useUIStore.
+  Connections: uiStore; mounted by login, register, settings and Navbar. Most
+               other pages use sonner instead, so there are two toast systems.
+  Status: WORKING (duplicate system).
+
+--------------------------------------------------------------------------------
+4.20 HOOKS (4)
+--------------------------------------------------------------------------------
+
+[137] frontend/src/hooks/useAuth.ts
+  Path: teampulse/frontend/src/hooks/useAuth.ts
+  Purpose: Thin wrapper around NextAuth.
+  What it does: Returns user, accessToken, refreshToken, isLoading,
+                isAuthenticated, login(provider, email, password) and logout().
+  Key code: login calls signIn with redirect:false for credentials or a normal
+            redirect for OAuth; logout calls signOut to /login.
+  Connections: Used by Sidebar/Navbar (unmounted) and useWebSocket (for the
+               access token).
+  Status: WORKING.
+
+[138] frontend/src/hooks/useDebounce.ts
+  Path: teampulse/frontend/src/hooks/useDebounce.ts
+  Purpose: Delay a changing value.
+  What it does: Returns the value only after it has stopped changing for `delay`
+                milliseconds, using setTimeout/clearTimeout in useEffect.
+  Key code: Generic <T>(value: T, delay: number): T.
+  Connections: Not imported anywhere yet (intended for search inputs).
+  Status: PARTIAL (unused).
+
+[139] frontend/src/hooks/useOptimisticUpdate.ts
+  Path: teampulse/frontend/src/hooks/useOptimisticUpdate.ts
+  Purpose: Reusable optimistic mutation helper.
+  What it does: Wraps useMutation with onMutate (cancel queries, snapshot,
+                apply optimistic update), onError (rollback) and onSettled
+                (invalidate).
+  Key code: Generic TData/TVariables with queryKey, mutationFn and
+            optimisticUpdate callbacks.
+  Connections: Not imported anywhere; KanbanBoard implements its own optimistic
+               update inline.
+  Status: PARTIAL (unused).
+
+[140] frontend/src/hooks/useWebSocket.ts
+  Path: teampulse/frontend/src/hooks/useWebSocket.ts
+  Purpose: Native WebSocket client with reconnect.
+  What it does: Builds ws(s)://.../api/v1/ws/projects/<id>?token=... when a
+                projectId is given, otherwise the team URL. Connects when
+                authenticated, parses JSON events and dispatches to callbacks
+                (task created/moved/updated/deleted, comment created/updated/
+                deleted, user joined/left, presence), reconnects with
+                exponential backoff (1s doubling, max 5 attempts), and exposes
+                send/setPresence/ping.
+  Key code: NEXT_PUBLIC_WS_URL base; isConnected state; cleanup closes the
+            socket and clears the reconnect timer.
+  Connections: useAuth, KanbanBoard, task detail page, backend WebSocket routes.
+  Status: WORKING client-side (no heartbeat interval is scheduled
+          automatically). Events only arrive for presence today; no task or
+          comment events are published by the server.
+
+--------------------------------------------------------------------------------
+4.21 LIBRARY, STORE AND TYPES (12)
+--------------------------------------------------------------------------------
+
+[141] frontend/src/lib/api.test.ts
+  Path: teampulse/frontend/src/lib/api.test.ts
+  Purpose: Unit tests for the API layer.
+  What it does: Mocks the axios instance and asserts that endpoint wrappers call
+                the right method/URL and return response.data, plus refresh/401
+                behaviour.
+  Key code: vi.mock('axios') and a mockInstance with get/post/patch/delete.
+  Connections: Run by Vitest; protects the payload() contract.
+  Status: WORKING.
+
+[142] frontend/src/lib/api.ts
+  Path: teampulse/frontend/src/lib/api.ts
+  Purpose: The single REST client for the whole frontend.
+  What it does: Creates axios with baseURL `${NEXT_PUBLIC_API_URL}/api/v1` and
+                withCredentials. A request interceptor adds a Bearer token from
+                the NextAuth session (cached 5s) for cross-site OAuth setups. A
+                response interceptor retries once after POST /auth/refresh on
+                401, then redirects to /login. Exports authApi, teamsApi,
+                projectsApi, tasksApi, commentsApi and aiApi, all unwrapping
+                response.data through payload().
+  Key code: `const payload = <T>(request) => request.then(r => r.data)` is the
+            fix for an earlier bug where pages received the raw axios response.
+  Connections: Every page/component that needs data. Uses types from @/types.
+  Status: WORKING.
+
+[143] frontend/src/lib/auth.ts
+  Path: teampulse/frontend/src/lib/auth.ts
+  Purpose: NextAuth v5 configuration.
+  What it does: Configures Credentials (posts to the backend /auth/login),
+                Google and GitHub providers. The jwt callback stores backend
+                access/refresh tokens, exchanges OAuth logins at
+                /auth/oauth/{provider}, and refreshes the access token one
+                minute before expiry. The session callback exposes tokens and
+                user id. Uses JWT sessions for 7 days, custom pages /login,
+                trustHost true.
+  Key code: API_URL prefers BACKEND_INTERNAL_URL (http://backend:8000 inside
+            Docker) over NEXT_PUBLIC_API_URL; userIdFromAccessToken decodes the
+            JWT payload without verifying (safe here because the backend signed
+            it).
+  Connections: [...nextauth]/route.ts, useAuth, api.ts token cache.
+  Status: WORKING.
+
+[144] frontend/src/lib/constants.ts
+  Path: teampulse/frontend/src/lib/constants.ts
+  Purpose: Shared enums and display metadata.
+  What it does: TASK_STATUSES (backlog/todo/in_progress/review/done), 
+                TASK_PRIORITIES (low/medium/high/urgent), TEAM_ROLES,
+                KANBAN_COLUMNS derived from statuses, STORY_POINTS
+                (1,2,3,5,8,13,21,34,55,89) and PRIORITY_ACTIONS.
+  Key code: `as const` arrays with value/label/color objects.
+  Connections: KanbanBoard, KanbanColumn, TaskModal, badges, filters.
+  Status: WORKING.
+
+[145] frontend/src/lib/utils.test.ts
+  Path: teampulse/frontend/src/lib/utils.test.ts
+  Purpose: Unit tests for helpers.
+  What it does: Tests cn class merging, getInitials, date formatting and the
+                colour helpers for common inputs.
+  Key code: expect(...).toBe(...) with fixed dates.
+  Connections: Run by Vitest.
+  Status: WORKING.
+
+[146] frontend/src/lib/utils.ts
+  Path: teampulse/frontend/src/lib/utils.ts
+  Purpose: Small shared helpers.
+  What it does: cn (clsx + tailwind-merge), formatDate, formatTime,
+                formatRelativeTime (date-fns), getInitials, and colour maps for
+                priority, status and role.
+  Key code: `cn(...inputs) { return twMerge(clsx(inputs)) }`; relative time uses
+            formatDistanceToNow.
+  Connections: Used by almost every component.
+  Status: WORKING.
+
+[147] frontend/src/lib/validations.ts
+  Path: teampulse/frontend/src/lib/validations.ts
+  Purpose: Zod schemas mirroring backend rules.
+  What it does: register/login, team create/update, member invite/update,
+                project create/update, task create/update/move/assign, comment
+                create/update.
+  Key code: z.object schemas with min/max and enums; exported for reuse.
+  Connections: Pages mostly define their own local schemas (login, register,
+               task modal, team/invite modals), so several of these are
+               currently unused.
+  Status: PARTIAL (duplicate schemas).
+
+[148] frontend/src/store/teamStore.ts
+  Path: teampulse/frontend/src/store/teamStore.ts
+  Purpose: Client-side team/project/task store.
+  What it does: Holds currentTeam, currentProject, members and tasks with
+                setters and add/update/remove/move helpers.
+  Key code: Plain Zustand create() without persistence.
+  Connections: Not imported anywhere; pages use TanStack Query plus local state
+               instead.
+  Status: PARTIAL (unused).
+
+[149] frontend/src/store/uiStore.ts
+  Path: teampulse/frontend/src/store/uiStore.ts
+  Purpose: UI preferences and toast queue.
+  What it does: sidebarOpen, theme (light/dark/system), toasts; toggle/set
+                helpers; theme also toggles the `dark` class on <html>; toasts
+                auto-remove after 5s (configurable). Persists theme and sidebar
+                under localStorage key "ui-store".
+  Key code: zustand/middleware persist with partialize.
+  Connections: Sidebar, Navbar, Toaster. Theme is separate from next-themes,
+               which the settings page uses - two theme mechanisms exist.
+  Status: WORKING (duplicate theme mechanism).
+
+[150] frontend/src/types/index.ts
+  Path: teampulse/frontend/src/types/index.ts
+  Purpose: Domain types shared by the frontend.
+  What it does: User, Team, TeamMember, Project, Task, ProjectMember, Comment,
+                Activity, AIPriority, StandupSummary, WebSocketEvent, plus
+                TaskStatus, TaskPriority and TeamRole string unions.
+  Key code: Interfaces mirror the backend Pydantic response shapes, including
+            optional nested assignee/reporter and comment.user.
+  Connections: api.ts, components, hooks, stores.
+  Status: WORKING.
+
+[151] frontend/src/types/next-auth.d.ts
+  Path: teampulse/frontend/src/types/next-auth.d.ts
+  Purpose: TypeScript augmentation for NextAuth.
+  What it does: Adds accessToken, refreshToken and user.id/full_name/avatar_url
+                to Session, User and JWT types so session.user.id is typed.
+  Key code: `declare module 'next-auth' { interface Session { accessToken: string; ... } }`.
+  Connections: Used implicitly by useAuth, api.ts and useWebSocket.
+  Status: WORKING.
+
+================================================================================
+END OF SECTION 4 - all 151 counted files covered.
+================================================================================
+
+================================================================================
+SECTION 5 - HOW EVERYTHING WORKS TOGETHER
+================================================================================
+
+5.1 THE THREE LAYERS
+-------------------
+  Browser
+    Next.js pages (client components) hold UI state and form state.
+    TanStack Query caches server data.
+    NextAuth keeps a JWT session cookie (not the backend token).
+    axios attaches credentials and/or a Bearer token.
+        |
+        | HTTP JSON over /api/v1, plus WebSocket
+        v
+  Backend (FastAPI)
+    Router -> dependency (auth, rate limit) -> Service -> SQLAlchemy -> Postgres
+    Service may also call Redis (rate limit, pub/sub) or the AI service.
+    Response is validated by a Pydantic schema and returned as JSON.
+        |
+        v
+  PostgreSQL (durable data) and Redis (ephemeral counters, pub/sub)
+  AI service (optional): FastAPI -> Groq API -> text parsed into score/summary.
+
+5.2 FLOW 1 - OPENING THE SITE
+-----------------------------
+  1. Browser requests https://<frontend>/ (or localhost:3000).
+  2. Next.js serves app/page.tsx (a server component).
+  3. The page is mostly static HTML + Tailwind; no API call is needed.
+  4. "Get Started" and "Demo Login" are plain links to /login.
+
+5.3 FLOW 2 - LOGIN WITH EMAIL AND PASSWORD (the most important flow)
+-------------------------------------------------------------------
+  1. User submits the form on /login.
+  2. Frontend validates locally with zod (email shape, password non-empty).
+  3. authApi.login() sends POST /api/v1/auth/login {email, password} with
+     withCredentials: true.
+  4. Backend auth route calls AuthService.login():
+       - SELECT user by email.
+       - bcrypt verify against password_hash.
+       - Reject inactive users.
+  5. create_token_pair(user.id, None, "member") builds:
+       access token: 15 min, type=access, sub=user id
+       refresh token: 7 days, type=refresh, sub=user id
+  6. AuthService._store_refresh_token stores SHA-256(refresh) in refresh_tokens.
+  7. The route sets two httpOnly cookies (access_token, refresh_token) on the
+     response and returns both tokens in the JSON body.
+  8. Browser stores the cookies automatically (this is why step 3 must happen
+     in the browser, not inside NextAuth's server-side authorize()).
+  9. The page then calls NextAuth signIn('credentials', ...).
+ 10. NextAuth's authorize() runs on the Next.js server and calls the backend
+     /auth/login again (server-to-server, using BACKEND_INTERNAL_URL in Docker).
+     It returns id/email/accessToken/refreshToken to NextAuth.
+ 11. NextAuth's jwt callback stores those tokens in its own encrypted JWT
+     session cookie; the session callback exposes accessToken, refreshToken and
+     user.id to the client.
+ 12. The page routes to /dashboard. From now on:
+       - same-site local dev: the backend cookie authenticates requests;
+       - cross-site production (Vercel -> Render): cookies are not shared, so
+         the axios interceptor adds Authorization: Bearer <session accessToken>.
+ 13. When the access token is near expiry, api.ts calls POST /auth/refresh
+     (cookie or body), and the backend rotates the refresh token. NextAuth's
+     jwt callback also refreshes proactively using the stored refresh token.
+
+5.4 FLOW 3 - LOADING THE DASHBOARD
+----------------------------------
+  1. app/(dashboard)/dashboard/page.tsx mounts (client component).
+  2. useSession() reads the NextAuth session.
+  3. useQuery(["teams"]) -> teamsApi.list() -> GET /api/v1/teams.
+  4. Backend: get_current_user verifies the token; TeamService.get_user_teams
+     joins team_members for this user and eager-loads members.
+  5. JSON array returns; TanStack Query caches it for 60 seconds.
+  6. A dependent query loops over each team's projects and calls
+     GET /projects/{id}/tasks?assignee_id=<me>, merges results, sorts by due
+     date and keeps five.
+  7. Components render. The charts use hard-coded arrays (mock); the standup
+     card waits for a button click.
+  8. If any call returns 401, the axios response interceptor tries refresh once,
+     then redirects to /login.
+
+5.5 FLOW 4 - DRAGGING A KANBAN CARD
+-----------------------------------
+  1. KanbanCard is draggable (HTML5 drag data + dnd-kit sortable attributes).
+  2. User drops it on KanbanColumn.
+  3. Column computes position = tasks.length * 10 and calls
+     onTaskMove(taskId, newStatus, position).
+  4. KanbanBoard updates local state immediately (optimistic UI), then calls the
+     page's move mutation.
+  5. tasksApi.move -> PATCH /api/v1/projects/{projectId}/tasks/{taskId}/move
+     body {status, position}.
+  6. Backend: get_current_user -> TaskService.move_task:
+       - loads the task, checks the caller is at least a member of the project's
+         team;
+       - if position is missing/None, appends after the current max;
+       - updates status/position, writes an Activity row ("moved", old/new
+         status and position), commits.
+  7. Response is a TaskResponse; the page invalidates ["tasks", projectId] so
+     the list re-syncs.
+  8. Intended next step (not implemented): TaskService would call
+     manager.publish_event(team_id, "task:moved", ...), Redis would fan it out,
+     every backend worker's _listen_redis would broadcast to its sockets, and
+     other browsers' KanbanBoard handlers would move the card. Today step 8
+     does not happen because publish_event is never called.
+
+5.6 FLOW 5 - COMMENTING ON A TASK
+---------------------------------
+  1. Task detail page loads GET /api/v1/tasks/{taskId} (direct router) and
+     GET /api/v1/tasks/{taskId}/comments.
+  2. New comment -> commentsApi.create -> POST /tasks/{id}/comments {content}.
+  3. comments route resolves the task's team, requires membership, calls
+     CommentService.create_comment: insert comment, log "commented" activity,
+     commit.
+  4. Response includes nested user; the page invalidates ["comments", taskId]
+     and re-renders.
+  5. Edit/delete are author-only (delete also allows owner/admin). The same
+     "commented" activity action is reused for edit/delete, so the log does not
+     distinguish them.
+
+5.7 FLOW 6 - AI TASK PRIORITY
+-----------------------------
+  1. User clicks the AI priority button on /tasks/[taskId].
+  2. Frontend -> POST /api/v1/ai/task-priority
+     {task_title, task_description, due_date, assignee_workload: 0,
+      project_velocity: 0}.
+  3. Backend route requires login, creates AIService (httpx, 30s timeout) and
+     POSTs to {AI_SERVICE_URL}/task-priority.
+  4. AI service builds a prompt from prompts.py and calls Groq's
+     /chat/completions with llama-3.3-70b-versatile, temperature 0.3.
+  5. It parses SCORE, REASONING and ACTION, clamps the score to 1-10 and maps an
+     invalid action to a score-based default.
+  6. If Groq (or the service) fails, the AI service returns a heuristic score,
+     and the backend has a second heuristic fallback as well.
+  7. Frontend shows the result with PriorityIndicator. Nothing is written to the
+     database, so ai_priority is always null on later loads.
+
+5.8 FLOW 7 - WEBSOCKET CONNECTION AND PRESENCE
+----------------------------------------------
+  1. useWebSocket builds ws(s)://<NEXT_PUBLIC_WS_URL>/api/v1/ws/projects/<id>
+     ?token=<accessToken>.
+  2. Browser sends the HTTP Upgrade request.
+  3. Backend websocket route reads the query token, verifies it, checks team
+     membership, accepts the socket.
+  4. ConnectionManager.connect adds the socket to the team room and broadcasts
+     presence:update "online" to the room.
+  5. Client may send {"event":"ping"} and receives pong, or presence:set with
+     online/away/busy.
+  6. On disconnect the manager removes the socket and broadcasts "offline".
+  7. Cross-worker fan-out exists (publish_event -> Redis channel team:<id> ->
+     psubscribe -> local broadcast), but only presence currently uses it.
+
+5.9 WHERE AUTH AND PERMISSIONS ARE ENFORCED
+-------------------------------------------
+  Authentication (who are you):
+    - jwt token signature + type check (core/security.py)
+    - token from cookie or Bearer header (dependencies/auth.py)
+    - user must exist and is_active
+  Authorization (what may you do):
+    - team membership is checked in TeamService/ProjectService/TaskService/
+      CommentService.
+    - role hierarchy viewer < member < admin < owner for task creation and
+      management.
+    - only owner/admin can change roles or remove members; only the owner can
+      delete a team; the owner cannot be removed or demoted.
+  Transport rules:
+    - httpOnly cookies, SameSite=Lax, Secure in production.
+    - refresh tokens stored hashed and rotated.
+    - login/register/refresh/forgot/reset rate-limited per IP.
+    - CORS restricted to configured origins with credentials allowed.
+  Known soft spots:
+    - WebSocket token travels in the query string (logged by some proxies).
+    - forgot/reset password endpoints do not send email or validate a reset
+      token properly (they are placeholders).
+    - the frontend has no route guard mounted; protection is API-driven.
+
+5.10 HOW THE DATA MODEL FITS TOGETHER
+-------------------------------------
+  User 1---* Team (owner)
+  User *---* Team through TeamMember (role)
+  Team 1---* Project 1---* Task
+  Task *---1 User (assignee, optional)
+  Task *---1 User (reporter, optional)
+  Task 1---* Comment *---1 User
+  Task 1---* Activity *---1 User
+  User 1---* RefreshToken
+  User 1---* OAuthAccount (provider identity)
+
+  Delete behaviour:
+    - deleting a team cascades to members and projects;
+    - deleting a project cascades to tasks;
+    - deleting a task cascades to comments and activities;
+    - deleting a user sets task assignee/reporter to NULL but cascades their
+      comments, activities and memberships.
+
+5.11 RECOMMENDED BEGINNER READING ORDER
+---------------------------------------
+Day 1 - the outside:
+  README.md -> frontend/src/app/page.tsx -> app/layout.tsx -> providers.tsx
+  -> app/(auth)/login/page.tsx.
+Day 2 - the API surface:
+  backend/app/main.py -> api/v1/__init__.py -> api/v1/auth.py
+  -> core/security.py -> dependencies/auth.py.
+Day 3 - one full request:
+  frontend/src/lib/api.ts -> services/auth.py -> models/user.py
+  -> schemas/auth.py.
+Day 4 - the board:
+  project page -> KanbanBoard -> KanbanColumn -> KanbanCard -> TaskModal
+  -> api/v1/tasks.py -> services/task.py.
+Day 5 - infrastructure:
+  core/database.py -> alembic/versions/001_initial.py -> core/redis.py
+  -> services/websocket.py -> api/v1/websocket.py.
+Day 6 - AI:
+  ai-service/main.py -> groq_client.py -> prompts.py -> backend services/ai.py.
+Day 7 - deployment:
+  Dockerfiles -> docker-compose.yml -> DEPLOY.md -> try it.
+
+================================================================================
+SECTION 6 - DEPLOYMENT
+================================================================================
+
+6.1 LIVE URLS - READ THIS FIRST
+-------------------------------
+Documented production URLs (from DEPLOY.md, reproduced exactly):
+
+  Frontend : https://teampulse.vercel.app
+  Backend  : https://teampulse-api.onrender.com
+  API health: https://teampulse-api.onrender.com/health
+  API docs  : https://teampulse-api.onrender.com/docs  (expected 404 in
+              production because DEBUG=false)
+
+Live status at the time this guide was written:
+  NOT VERIFIED - please open each URL and write the date/result here:
+  Frontend reachable on ____________ : YES / NO
+  Backend /health returns ok on ______ : YES / NO
+  Seeded demo login works on _________ : YES / NO
+
+Important: these hostnames are project-specific guesses baked into DEPLOY.md.
+If the Vercel project or Render service was created under a different name,
+the real URLs are different. Check each dashboard; do not assume.
+
+6.2 PLATFORM CHOICE AND WHY
+---------------------------
+  Frontend -> Vercel
+    Why: Next.js is made by Vercel; the free Hobby plan builds from GitHub with
+    no card, serves static assets from a CDN and runs serverless functions for
+    NextAuth. A FastAPI process cannot run there.
+  Backend -> Render (Docker)
+    Why: The free plan runs a Dockerfile.prod container without a card. Render
+    injects $PORT (handled by the Dockerfile), supports a health check path and
+    auto-deploys on push. Trade-off: it sleeps after 15 minutes idle and takes
+    about a minute to wake.
+  Database -> Neon
+    Why: Serverless Postgres 16, 1 GB free with no expiry, TLS by default. The
+    code already rewrites sslmode=require for asyncpg. Use the direct host (no
+    "-pooler") because the app uses a normal async pool.
+  Redis -> Upstash
+    Why: 250 MB free, TLS (rediss://), and the app only needs pub/sub plus a
+    rate-limit counter. Render Key Value is an alternative when available.
+  AI service -> not deployed
+    Why: It is optional. With AI_SERVICE_URL unset, backend calls fail fast and
+    AIService returns the heuristic score/summary. This keeps the free budget
+    for the API. If you deploy it later, use Dockerfile.prod and set
+    AI_SERVICE_URL to its public URL.
+  Keep-alive -> cron-job.org
+    Why: Pings /health every 10 minutes so the free Render service does not
+    sleep. Render's 750 instance-hours/month is almost consumed by one always-on
+    service (about 730 hours), so do not keep a second service awake.
+
+6.3 STEP-BY-STEP: GITHUB -> LIVE
+--------------------------------
+Prerequisites: the code is pushed to GitHub (branch master), Docker Desktop is
+running locally (needed only for seeding), and you have a text file open for
+pasting URLs.
+
+STEP 1 - Create the database (Neon)
+  1. Sign in at neon.tech with GitHub.
+  2. New Project: name teampulse, region Singapore, Postgres 16.
+  3. Open Connect and copy the DIRECT connection string (no "-pooler").
+  4. Keep it unchanged; database_url() adds +asyncpg and converts sslmode.
+
+STEP 2 - Create Redis (Upstash)
+  1. Sign in at upstash.com, create a Regional database in ap-southeast-1,
+     Free plan.
+  2. Copy the TLS URL starting with rediss:// (not the REST URL).
+
+STEP 3 - Deploy the API (Render)
+  1. dashboard.render.com -> New -> Web Service -> connect the repo.
+  2. Name teampulse-api; region Singapore; branch master; root directory
+     backend; runtime Docker; Dockerfile ./Dockerfile.prod; instance Free;
+     health check /health; auto-deploy yes.
+  3. Add environment variables one row at a time:
+       DATABASE_URL      = Neon direct URL
+       REDIS_URL         = Upstash rediss:// URL
+       SECRET_KEY        = 64 random hex chars
+       ENVIRONMENT       = production
+       DEBUG             = false
+       FRONTEND_URL      = https://<your-vercel-domain>
+       CORS_ORIGINS      = ["https://<your-vercel-domain>"]
+     Do not add GOOGLE_/GITHUB_ client values here; the API trusts NextAuth.
+     Do not add AI_SERVICE_URL unless the AI service is deployed.
+  4. Create Web Service. First build takes 3-5 minutes.
+  5. Open /health and expect {"status":"ok","service":"teampulse-backend"}.
+
+STEP 4 - Seed the database
+  Free Render has no shell, so run the seed from your laptop against Neon:
+    cd "D:\Projects\On Working Projects\TeamPulse\teampulse"
+    docker compose build backend
+    docker compose run --rm --no-deps -e DATABASE_URL="<Neon direct URL>" backend python scripts/seed.py
+  Keep the command on one line in PowerShell. Success prints the four
+  @teampulse.ac accounts. Then test login with curl:
+    curl.exe -X POST https://teampulse-api.onrender.com/api/v1/auth/login -H "Content-Type: application/json" -d '{\"email\":\"arjun@teampulse.ac\",\"password\":\"Passcode@9938\"}'
+
+STEP 5 - Deploy the frontend (Vercel)
+  1. vercel.com -> Add New -> Project -> import the repo.
+  2. Root Directory = frontend. Framework auto-detects Next.js.
+  3. Production environment variables:
+       NEXT_PUBLIC_API_URL   = https://teampulse-api.onrender.com
+       NEXT_PUBLIC_WS_URL    = wss://teampulse-api.onrender.com
+       BACKEND_INTERNAL_URL  = https://teampulse-api.onrender.com
+       NEXTAUTH_URL          = https://<your-vercel-domain>
+       NEXTAUTH_SECRET       = another 64 random hex chars (different from
+                               SECRET_KEY)
+       GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
+       GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET
+     No trailing slashes. NEXT_PUBLIC_* values are baked into the bundle at
+     build time, so changing them requires a redeploy.
+  4. Deploy.
+
+STEP 6 - OAuth callbacks
+  Google (console.cloud.google.com -> Credentials):
+    Authorized JavaScript origin: https://<vercel-domain>
+    Authorized redirect URI: https://<vercel-domain>/api/auth/callback/google
+    Add your Gmail as a test user while the app is in Testing mode.
+  GitHub (github.com/settings/developers):
+    Homepage URL: https://<vercel-domain>
+    Authorization callback URL:
+      https://<vercel-domain>/api/auth/callback/github
+
+STEP 7 - Keep the API awake
+  cron-job.org -> Create cronjob -> URL https://teampulse-api.onrender.com/health
+  -> every 10 minutes -> enable -> Test run.
+
+STEP 8 - Verify in order
+  1. /health returns ok.
+  2. /docs returns 404 (expected).
+  3. Log in with arjun@teampulse.ac / Passcode@9938 -> /dashboard.
+  4. Team page shows 26 seeded tasks.
+  5. Drag a card, reload, the move persisted.
+  6. DevTools -> Network -> WS shows status 101.
+  7. A second browser sees presence changes; task changes will NOT sync until
+     publish_event is wired (known gap).
+  8. Google and GitHub buttons return to /dashboard.
+
+STEP 9 - Clean up old hosting
+  If an older Railway project still exists, delete its web service, Postgres and
+  Redis after the new stack passes step 8.
+
+6.4 DEPLOYMENT-RELATED FILES
+----------------------------
+  docker-compose.yml            Local five-service stack.
+  docker-compose.prod.yml       Backend + AI production images.
+  docker-compose.test.yml       Isolated test stack on alternate ports.
+  backend/Dockerfile            Dev API (uvicorn --reload).
+  backend/Dockerfile.prod       Render image (PORT-aware, non-root).
+  ai-service/Dockerfile         Dev AI service.
+  ai-service/Dockerfile.prod    Production AI service (PORT-aware).
+  frontend/Dockerfile           Dev frontend (npm run dev).
+  frontend/Dockerfile.prod      Standalone Next.js production image.
+  .env.example                  Compose variable template.
+  backend/.env.example          API variable template.
+  ai-service/.env.example       AI variable template.
+  frontend/next.config.js       CSP/connect-src + backend rewrite + standalone.
+  .dockerignore files           Keep build contexts small.
+  DEPLOY.md                     The full runbook summarised above.
+  .github/workflows/            Empty; no CI/CD pipeline exists.
+
+6.5 ENVIRONMENT VARIABLE NAMES (NAMES ONLY, NO VALUES)
+------------------------------------------------------
+  Root / docker compose:
+    POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_PORT,
+    REDIS_PORT, BACKEND_PORT, FRONTEND_PORT, AI_SERVICE_PORT,
+    SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES,
+    REFRESH_TOKEN_EXPIRE_DAYS, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+    GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, FRONTEND_URL, AI_SERVICE_URL,
+    ENVIRONMENT, NEXTAUTH_SECRET, NEXTAUTH_URL, GROQ_API_KEY, GROQ_MODEL.
+  Backend:
+    DATABASE_URL, REDIS_URL, SECRET_KEY, ALGORITHM,
+    ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS,
+    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID,
+    GITHUB_CLIENT_SECRET, FRONTEND_URL, AI_SERVICE_URL, ENVIRONMENT,
+    SENTRY_DSN, DEBUG, CORS_ORIGINS.
+  Frontend (Vercel):
+    NEXT_PUBLIC_API_URL, NEXT_PUBLIC_WS_URL, BACKEND_INTERNAL_URL,
+    NEXTAUTH_URL, NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+    GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET.
+  AI service:
+    GROQ_API_KEY, GROQ_MODEL, GROQ_BASE_URL, PORT.
+
+6.6 HOW TO REDEPLOY
+-------------------
+  Code change (frontend or backend):
+    1. git add . ; git commit -m "..." ; git push origin master
+    2. Vercel auto-builds the frontend from the push.
+    3. Render auto-builds the backend Docker image from the push.
+    4. Watch both dashboards; the Render free build has no cache, so expect
+       3-5 minutes.
+  Environment variable change:
+    - Render: edit the variable, then Manual Deploy -> Deploy latest commit
+      (a plain restart is not always enough because the container is rebuilt).
+    - Vercel: edit, then Deployments -> Redeploy, because NEXT_PUBLIC_* values
+      are compiled into the bundle.
+  Database schema change:
+    1. Create a migration locally: alembic revision --autogenerate -m "msg".
+    2. Review the generated file.
+    3. Run alembic upgrade head against Neon (from a machine that can reach it),
+       or rely on init_db()/create_all for additive changes.
+    4. Never edit 001_initial.py after it has been applied somewhere.
+  Seeding again:
+    Run the same docker compose run command; seed.py skips rows that exist.
+
+6.7 COMMON DEPLOYMENT PROBLEMS
+------------------------------
+  CORS error in the browser
+    CORS_ORIGINS must be a JSON array with the exact origin (scheme + host, no
+    trailing slash), and the frontend must be redeployed after changing
+    NEXT_PUBLIC_API_URL.
+  Render says "No open ports detected"
+    Root directory must be backend and Dockerfile path ./Dockerfile.prod. The
+    production CMD already binds to $PORT.
+  Render crashes on boot with ConnectionError
+    Bad REDIS_URL. Upstash needs rediss:// including the password; the lifespan
+    hook initialises Redis before serving.
+  500 on /auth/login
+    Missing SECRET_KEY, or the database is unreachable/migrations not applied.
+  "UntrustedHost"
+    trustHost: true is missing in frontend/src/lib/auth.ts (it is present now).
+  "Invalid connection option sslmode"
+    Someone removed the sslmode -> ssl rewrite in core/database.py.
+  WebSocket fails only in production
+    NEXT_PUBLIC_WS_URL must be wss:// and must be set before the build.
+  OAuth returns to /login?error=...
+    Callback URL does not exactly match the deployed domain.
+  Board empty after deploy
+    Seed step skipped, or seeded against a different DATABASE_URL.
+  Everything 502 for a minute
+    Render cold start. The cron ping prevents it.
+  Login works but API calls fail on Vercel
+    Cookies are not shared between vercel.app and onrender.com. The Bearer
+    fallback must be working; check that NextAuth exposes accessToken in the
+    session.
+  AI always returns generic scores
+    AI_SERVICE_URL is unset or the AI service is asleep/not deployed. This is
+    the designed fallback, not a crash.
+
+6.8 COST AND FREE-TIER NOTES
+----------------------------
+  Total documented cost: $0.
+  Limits to respect:
+    - Render: 750 instance hours per workspace per month. One always-on service
+      uses about 730, so run only one.
+    - Render free: 512 MB RAM, sleeps after 15 minutes idle.
+    - Neon free: 1 GB storage, sleeps after about 5 minutes idle, first query
+      is slower.
+    - Upstash free: 250 MB and 500K commands/month.
+    - Vercel Hobby: 100 GB bandwidth; commercial use rules apply.
+  If a one-minute cold start is unacceptable, the next options are Google Cloud
+  Run (needs a card, ~2s cold start) or Oracle Cloud Always Free (needs a card
+  for verification, never sleeps).
+
+6.9 SECURITY CHECKLIST BEFORE SHARING THE LINK
+----------------------------------------------
+  [ ] .env is not committed (check `git status` and the GitHub file list).
+  [ ] SECRET_KEY and NEXTAUTH_SECRET are different, random and at least 32 bytes.
+  [ ] DEBUG=false on Render (hides /docs and SQL echo).
+  [ ] CORS_ORIGINS lists only the real frontend origin.
+  [ ] OAuth callback URLs use https and the exact domain.
+  [ ] Demo password is changed or the demo accounts are clearly labelled.
+  [ ] Google OAuth app test users are configured.
+  [ ] No API key appears in frontend code or NEXT_PUBLIC_* variables.
+  [ ] If the repo was ever public with a real .env, rotate the keys.
+
+================================================================================
+SECTION 7 - BEGINNER NOTES: GLOSSARY AND LOCAL RUN
+================================================================================
+
+7.1 GLOSSARY
+------------
+API            Application Programming Interface - here, the JSON endpoints
+               under /api/v1 that the frontend calls.
+Async          Code that can wait for I/O (database, network) without blocking
+               the whole server. FastAPI and SQLAlchemy here are async.
+Alembic        Database migration tool for SQLAlchemy. A migration is a Python
+               file that upgrades/downgrades the schema.
+Bearer token   An HTTP Authorization header: "Bearer <jwt>". Used when cookies
+               cannot be shared across sites.
+bcrypt         Slow password hashing algorithm. Passwords are never stored in
+               plain text.
+CORS           Cross-Origin Resource Sharing. The backend must explicitly allow
+               the frontend's origin when they are on different domains.
+CSP            Content-Security-Policy. A browser rule list that says which
+               scripts/connections are allowed. A wrong connect-src blocks the
+               API.
+Docker         Packages an app and its dependencies into an image; a container
+               is a running image.
+Docker Compose Runs several containers from one YAML file.
+dnd-kit        React drag-and-drop library used for Kanban sorting.
+FastAPI        Python web framework with automatic validation and OpenAPI docs.
+Groq           AI inference provider; this project calls its OpenAI-compatible
+               chat completions API with Llama 3.3 70B.
+httpOnly       A cookie flag that hides the cookie from JavaScript, reducing
+               XSS token theft.
+JWT            JSON Web Token: header.payload.signature. The payload here holds
+               sub (user id), team_id, role, type, exp and iat.
+Middleware     Code that runs around every request (logging, headers).
+Migration      A versioned schema change (see Alembic).
+Next.js        React framework with file-based routing and server components.
+NextAuth       Authentication library for Next.js. It manages its own session
+               cookie and supports Credentials/Google/GitHub providers.
+ORM            Object-Relational Mapper: Python classes map to SQL tables
+               (SQLAlchemy here).
+PostgreSQL     Relational database. Data lives in tables with foreign keys.
+Pydantic       Python validation library. Schemas check request bodies and
+               shape responses.
+Redis          In-memory store. Used for rate-limit counters and pub/sub
+               messages between WebSocket workers.
+Refresh token  Long-lived token used to get a new short-lived access token.
+               Stored hashed in the database and rotated on use.
+Render         Hosting platform used for the Dockerised API.
+REST           HTTP style using methods (GET/POST/PATCH/DELETE) and resource
+               URLs.
+Route group    Next.js folder in parentheses, e.g. (dashboard); it groups files
+               without adding a URL segment.
+Schema         Either a database table definition or a Pydantic model,
+               depending on context.
+SQLAlchemy     Python ORM and SQL toolkit; version 2.0 style is used here.
+SSE/WebSocket  Ways to push data from server to browser. This project uses
+               WebSocket (full duplex).
+TanStack Query Client-side cache for server data; handles loading, retries and
+               invalidation.
+tsbuildinfo    TypeScript incremental build cache file.
+Upstash        Managed Redis provider with a TLS URL (rediss://).
+Vercel         Hosting platform for the Next.js frontend.
+Vitest         Unit test runner for the frontend.
+Playwright     Browser automation used for end-to-end tests.
+Zod            TypeScript schema validation, used with react-hook-form.
+Zustand        Small React state store (sidebar, theme, toasts).
+Uvicorn        ASGI server that runs the FastAPI app.
+
+7.2 RUN LOCALLY WITH DOCKER (EASIEST)
+-------------------------------------
+Prerequisites: Docker Desktop installed and running; ports 3000, 8000, 8001,
+5432 and 6379 free.
+
+  1. cd "D:\Projects\On Working Projects\TeamPulse\teampulse"
+  2. copy .env.example .env        (PowerShell: Copy-Item .env.example .env)
+  3. Edit .env: set SECRET_KEY, NEXTAUTH_SECRET and GROQ_API_KEY.
+     OAuth values are optional; leave them empty if you do not need social login.
+  4. docker compose up --build
+  5. Wait for postgres and redis health checks, then the backend.
+  6. Seed demo data (in a second terminal):
+       docker compose exec backend python scripts/seed.py
+  7. Open:
+       Frontend      http://localhost:3000
+       API docs      http://localhost:8000/docs
+       AI docs       http://localhost:8001/docs
+  8. Log in with arjun@teampulse.ac / Passcode@9938.
+  9. Stop with Ctrl+C, or `docker compose down`. Add -v only if you want to
+     delete the database volume.
+
+Notes:
+  - The backend container mounts ./backend, so code changes reload.
+  - The frontend container runs `npm run dev`; first start can take a minute.
+  - If the seed runs before the database is ready, wait and run it again.
+
+7.3 RUN LOCALLY WITHOUT DOCKER (WINDOWS POWERSHELL)
+---------------------------------------------------
+Prerequisites: Python 3.11+, Node 20+, PostgreSQL 16 and Redis 7 installed
+locally (or run only those two with Docker).
+
+  A. Start infrastructure only:
+       docker compose up -d postgres redis
+
+  B. Backend:
+       cd backend
+       python -m venv .venv
+       .\.venv\Scripts\Activate.ps1
+       pip install -r requirements-dev.txt
+       Copy-Item .env.example .env
+       # edit .env: DATABASE_URL, REDIS_URL, SECRET_KEY, AI_SERVICE_URL
+       alembic upgrade head
+       python scripts/seed.py
+       uvicorn app.main:app --reload --port 8000
+
+  C. AI service (optional):
+       cd ai-service
+       python -m venv .venv
+       .\.venv\Scripts\Activate.ps1
+       pip install -r requirements.txt
+       Copy-Item .env.example .env
+       # set GROQ_API_KEY
+       uvicorn main:app --reload --port 8001
+
+  D. Frontend:
+       cd frontend
+       npm install
+       # create .env.local with:
+       #   NEXT_PUBLIC_API_URL=http://localhost:8000
+       #   NEXT_PUBLIC_WS_URL=ws://localhost:8000
+       #   BACKEND_INTERNAL_URL=http://localhost:8000
+       #   NEXTAUTH_URL=http://localhost:3000
+       #   NEXTAUTH_SECRET=<random>
+       #   GOOGLE_/GITHUB_ values if needed
+       npm run dev
+
+  E. Open http://localhost:3000.
+
+  Common Windows issues:
+    - PowerShell blocks venv activation: run
+      Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+    - psycopg/asyncpg build errors: use Python 3.11 or 3.12, not 3.13.
+    - Port already in use: `netstat -ano | findstr :3000` then stop that PID.
+    - NextAuth calls localhost from inside a container: set
+      BACKEND_INTERNAL_URL=http://backend:8000.
+
+7.4 DEMO ACCOUNTS (FROM seed.py)
+--------------------------------
+  admin@teampulse.ac   / Passcode@9938   (global admin, not in the demo team)
+  arjun@teampulse.ac   / Passcode@9938   (owner of Acme Corp)
+  priya@teampulse.ac   / Passcode@9938   (admin)
+  rohan@teampulse.ac   / Passcode@9938   (member)
+  Seed data: team "Acme Corp", projects WEB / MOB / API, 26 tasks.
+  DEPLOY.md's john/jane/bob@teampulse.demo accounts are not created by the
+  current seed script. Ignore them.
+
+7.5 MANUAL VERIFICATION CHECKLIST
+---------------------------------
+  [ ] Register a brand-new email; land on /dashboard.
+  [ ] Log out and log back in with the same account.
+  [ ] Create a team; open it; invite priya@teampulse.ac as member.
+  [ ] Create a project with an uppercase key prefix.
+  [ ] Create a task in Backlog, drag it to In Progress, reload - it stays.
+  [ ] Open the task; edit title/priority; add a comment; edit it; delete it.
+  [ ] Check the activity log shows created/moved/updated/commented entries.
+  [ ] Click the AI priority button; a score appears (heuristic if no Groq key).
+  [ ] Switch theme in Settings; reload - the choice persists.
+  [ ] Open two browsers and confirm presence appears/disappears (task sync is
+      a known gap).
+  [ ] Run `cd frontend && npm test`; the Button/Card/api/utils tests pass.
+  [ ] Run `cd frontend && npm run type-check`.
+  [ ] Run `cd backend && pytest` (currently reports no tests collected - that
+      is expected until tests are written).
+
+7.6 WHAT TO LEARN NEXT (IN ORDER)
+---------------------------------
+  1. Wire manager.publish_event into TaskService/CommentService so the board is
+     truly real-time. This is the highest-value fix.
+  2. Replace mock dashboard charts with real aggregates from tasks/activities.
+  3. Fix /ai/my-standup (body vs query, wrong import, wrong service call).
+  4. Pass team members into TaskModal so assignment works from the board.
+  5. Mount the dashboard shell (Sidebar + Navbar + ProtectedRoute) in a
+     (dashboard)/layout.tsx.
+  6. Add backend tests for auth, permissions and task moves.
+  7. Add a GitHub Actions workflow: ruff + mypy + pytest, then npm test +
+     type-check + build.
+  8. Persist AI priority scores and notification preferences.
+  9. Add pagination to task and comment lists.
+  10. Write the LICENSE file (MIT) promised by PROJECT_RULES.md.
+
+================================================================================
+END OF PROJECT_GUIDE.txt
+================================================================================

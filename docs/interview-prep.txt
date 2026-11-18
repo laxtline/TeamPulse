@@ -1,0 +1,301 @@
+================================================================================
+TEAMPULSE - INTERVIEW PREPARATION
+================================================================================
+Last updated : 18 November 2026
+For          : fresher interviews at TCS, Infosys, Wipro, Accenture, Cognizant,
+               Capgemini, Tech Mahindra, and product/GCC roles at Flipkart,
+               Paytm, Razorpay.
+
+How to use: read section 1 out loud until it is natural. Then go deep on the
+areas listed in section 3. Section 5 is the honest-gaps script - learn it,
+because a controlled answer about a bug is worth more than pretending there are
+none.
+
+--------------------------------------------------------------------------------
+1. THE 60-SECOND INTRO (memorise, then make it sound unrehearsed)
+--------------------------------------------------------------------------------
+"TeamPulse is a team collaboration tool I built to solve a problem I had in
+college: work was tracked in a WhatsApp group and a spreadsheet, so nobody knew
+the real status of anything.
+
+It has three services. A Next.js 14 frontend in TypeScript with Tailwind and
+TanStack Query. A FastAPI backend on Python with async SQLAlchemy over
+PostgreSQL, plus Redis for rate limiting. And a separate FastAPI AI microservice
+that calls Groq's Llama 3.3 to score task priority, with a rule-based fallback
+so the app still works if the API key is missing.
+
+The core feature is a Kanban board: five columns, drag a card and the status and
+position persist. Under it, there is JWT auth with refresh token rotation, OAuth
+through NextAuth, a four-level role matrix enforced in the service layer, and an
+activity log that records old and new values for every change.
+
+I deployed it as three services - Vercel, Render, Neon Postgres, Upstash Redis -
+because on free tiers you cannot run everything in one place.
+
+The part I would fix next is the real-time layer: the WebSocket connection and
+presence work, but the task services never emit events, so two browsers do not
+sync. That is a two-day fix and I know exactly where it goes."
+
+Why this works: problem, stack, hardest feature, infrastructure decision, and a
+self-aware gap. Most freshers stop after the stack.
+
+--------------------------------------------------------------------------------
+2. THE PROJECT IN NUMBERS (only say these if true when you say them)
+--------------------------------------------------------------------------------
+  3      deployable services
+  9      database tables
+  1      Alembic migration, 19 indexes and constraints
+  31     REST route declarations, 2 WebSocket routes
+  ~151   source files before the docs folder
+  26     seeded tasks across 3 projects, 4 demo users
+  4      frontend unit test files, 3 Playwright specs
+  15min  access token lifetime; 7 days refresh token
+
+If a number has changed since you last checked, do not quote it. "Around thirty
+endpoints" is safer than a wrong precise number.
+
+--------------------------------------------------------------------------------
+3. WHERE THEY WILL PROBE (and the answer they want)
+--------------------------------------------------------------------------------
+3.1 "Why three services instead of a monolith?"
+    Two real reasons, not resume-driven:
+    - AI calls are slow (hundreds of ms to seconds) and can fail. Isolating them
+      keeps normal CRUD fast and stops an AI outage from taking down the app.
+    - Different dependency profile and different scaling. The AI service can be
+      restarted or replaced without touching the API.
+    Then admit the cost: more deployment surface, two more sets of env vars, and
+    a network hop. For a team of ten this could be one service; I split it to
+    practise distributed failure handling.
+
+3.2 "Why async SQLAlchemy?"
+    The workload is I/O-bound: DB queries and outbound HTTP. With async and
+    asyncpg, one worker can hold many in-flight requests instead of blocking a
+    thread per query. Sync SQLAlchemy would need many more workers or threads to
+    get the same concurrency.
+    Follow-up trap: "Is it faster?" No - per-query latency is the same. It is
+    throughput per worker, not speed per query. Say that; it is the detail that
+    separates memorisation from understanding.
+
+3.3 "Walk me through authentication."
+    Registration hashes the password with bcrypt and stores the user.
+    Login verifies the hash, then issues two tokens: an access token (JWT, 15
+    minutes, carries user id and token type) and a refresh token (7 days, stored
+    hashed in the database with an expiry and a revoked flag).
+    The access token goes out as an httpOnly cookie AND is returned so the
+    frontend can send a Bearer header - the fallback exists because the frontend
+    and backend are on different domains in production, and cross-site cookies
+    can be blocked.
+    When the access token expires, axios gets a 401, the interceptor calls
+    /auth/refresh once, gets a new pair, and retries the original request.
+    Refresh rotation: the old refresh token is revoked when a new one is issued,
+    so a stolen token has a single use. Logout revokes it explicitly.
+    OAuth: NextAuth handles the provider handshake, then posts the verified
+    profile to the backend, which looks up or creates the user in oauth_accounts
+    and issues the same token pair. One auth model for all three login paths.
+
+3.4 "How does the drag and drop persist?"
+    dnd-kit gives an onDragEnd event with the card id and the target column. The
+    UI updates optimistically so it feels instant. Then a PATCH to
+    /tasks/{id}/move with the new status and position. The service recalculates
+    positions for the affected columns and writes them in one transaction. If the
+    request fails, the optimistic update is rolled back and the user sees it.
+    Honest addition: two simultaneous drags from different clients can produce a
+    surprising order, because I have no server-side ordering lock. Next step
+    would be a version column or an integer gap strategy (positions 1000, 2000,
+    3000 so an insert only rewrites one row).
+
+3.5 "Show me your database design."
+    Nine tables. users, oauth_accounts, refresh_tokens, teams, team_members,
+    projects, tasks, comments, activities.
+    The interesting decisions:
+    - team_members is an explicit join table with a role, because the role is
+      per team, not per user.
+    - unique(team_id, user_id) prevents duplicate membership.
+    - projects.key is unique per team, so WEB-12 style references cannot collide.
+    - activities stores old_value and new_value as JSON text so the audit trail
+      is readable later without schema changes.
+    - Status, priority and role are enums, so an invalid value is rejected by the
+      database, not just by the API.
+    - Indexes on the hot filters: tasks(project_id, status), tasks(assignee_id),
+      comments(task_id), activities(task_id).
+    Then say what is missing: one migration only, and no EXPLAIN evidence.
+
+3.6 "Why Alembic instead of create_all?"
+    create_all cannot express a change: it only creates missing tables. Alembic
+    gives versioned, ordered, reversible schema changes that can run in a
+    deployment step against a live database. It is the difference between a
+    script and a process.
+    Honest: I have one migration, so my downgrade path is barely exercised.
+
+3.7 "How does the AI integration work, and what if it fails?"
+    The backend calls the AI service with a timeout. The AI service builds a
+    short prompt - title, description, priority, due date, status, days overdue -
+    calls Groq with Llama 3.3 70B, and returns score, reason, action.
+    If the key is missing, the call times out, or the response is not parseable,
+    a local heuristic runs: base score from declared priority, plus points for
+    being overdue, plus a bump for status. So the endpoint always returns
+    something usable.
+    Design principle: never let a third-party dependency be the difference
+    between a working app and a broken one.
+
+3.8 "How is authorization enforced?"
+    Not in the UI. Every service method looks up the caller's membership in the
+    team and compares the role against the action. A viewer who forges a request
+    gets 403 from the server. The role matrix is in project-spec.txt.
+    Extra detail: the admin role cannot demote the last owner - that rule lives
+    in the service, because it is a data invariant, not a UI rule.
+
+3.9 "What is your testing story?"
+    Frontend: vitest for units (Button, Card, api client, utils) and Playwright
+    for auth, board and task flows.
+    Backend: honestly, nothing yet. The folders exist and the test compose file
+    exists, but there are no tests. That is my next task, and I have the list:
+    auth flow, the permission matrix, invalid status rejection, non-member access.
+    Saying "empty" and then describing the plan is far better than claiming
+    coverage you cannot show.
+
+3.10 "How is it deployed?"
+    Vercel for the frontend, Render for the two Python services, Neon for
+    Postgres, Upstash for Redis, and a cron pinger because Render's free tier
+    sleeps after 15 minutes.
+    The details that actually matter: NEXT_PUBLIC_* variables are baked at build
+    time so a change needs a redeploy; DATABASE_URL needs the +asyncpg driver and
+    ssl=require instead of sslmode=require; CORS must match the exact origin; and
+    WSS not WS because the page is HTTPS.
+    Migrations and seed are run as a release step, not on every boot.
+
+--------------------------------------------------------------------------------
+4. RAPID-FIRE TECHNICAL QUESTIONS
+--------------------------------------------------------------------------------
+Q What is the difference between 401 and 403?
+A 401 = not authenticated (who are you). 403 = authenticated but not allowed
+  (I know who you are, you may not do this).
+
+Q Why hash refresh tokens in the database?
+  If the DB leaks, the tokens are unusable. Same principle as passwords.
+
+Q CORS - what actually happens?
+  The browser sends a preflight OPTIONS for non-simple requests. The server must
+  return the exact origin in Access-Control-Allow-Origin plus the allowed methods
+  and headers. CORS is a browser rule; curl ignores it.
+
+Q Why httpOnly cookies?
+  JavaScript cannot read them, so XSS cannot steal the token. Trade-off: you
+  need CSRF protection, which is why SameSite is set.
+
+Q What is the N+1 problem and did you hit it?
+  Loading a list of tasks then querying the assignee for each one - N+1 queries.
+  Fixed with eager loading (selectinload) so related rows come in one extra
+  query.
+
+Q Why TanStack Query if you have Zustand?
+  They solve different problems. TanStack Query owns server state - caching,
+  refetching, invalidation. Zustand owns client state - theme, UI toggles.
+  Mixing them is how you get stale data everywhere.
+
+Q What is optimistic UI?
+  Update the screen before the server confirms, then roll back on error. Used on
+  the Kanban drag so it feels instant.
+
+Q How would you scale the WebSocket layer?
+  Today each instance holds its connections in memory. To run several instances,
+  broadcast through Redis pub/sub: an event published by instance A is picked up
+  by B and C, which push to their own clients. That is why Redis is already in
+  the stack.
+
+Q SQL vs NoSQL here - why Postgres?
+  The data is heavily relational: users in teams, teams with projects, projects
+  with tasks, and permissions that depend on joins. Constraints and transactions
+  matter more than flexible schema.
+
+Q How do you handle a slow AI call without blocking the user?
+  Timeout plus fallback, and the UI shows the heuristic result while the real
+  call is optional. For a heavier workload I would move it to a background task
+  and poll or push the result.
+
+Q What would you do differently if you restarted?
+  Start with tests for the permission matrix, add the dashboard layout before
+  building pages (I built pages first and now have unmounted components), and
+  emit WebSocket events at the same time as writing the service, not later.
+
+--------------------------------------------------------------------------------
+5. THE HONEST GAPS SCRIPT
+--------------------------------------------------------------------------------
+When they find a bug - and they will, if they click around - do not freeze. Use
+this shape: name it, explain the cause, give the fix, give the effort.
+
+  "Yes, that is broken. The standup endpoint expects the date as a query
+   parameter but my client sends it in the body, so it 422s. There is also a bad
+   import in that module. The fix is about two hours: make the date an optional
+   body field and query activities by user and date range instead of by task. I
+   found it during a demo rehearsal and it is first on my list."
+
+The four gaps worth memorising:
+
+  Real-time      "Presence works, event broadcast is not emitted yet. Two-tab
+                  sync is the next fix."
+  Standup        "Contract mismatch plus a bad import. Known, scoped fix."
+  Mock charts    "Hard-coded sample data. Real aggregates need one stats
+                  endpoint."
+  No backend tests "Empty folders. I have the test list written; it is the next
+                  chunk of work."
+
+Rule: never say "it works on my machine", never blame the framework, and never
+claim a feature you cannot show.
+
+--------------------------------------------------------------------------------
+6. QUESTIONS TO ASK THEM (pick two, never zero)
+--------------------------------------------------------------------------------
+  "What does the first six months look like for a fresher here - training,
+   shadowing, or tickets from week one?"
+  "How does the team review code - PRs, pair review, or something else?"
+  "Which part of the stack would I actually touch in this role?"
+  "How is deployment handled - is there a release process, or does each team
+   ship its own?"
+  "What separates a fresher who does well here from one who struggles?"
+
+Avoid: salary in round one, "is there work from home", and anything answered on
+the website.
+
+--------------------------------------------------------------------------------
+7. COMPANY-SPECIFIC PREP
+--------------------------------------------------------------------------------
+  TCS / Infosys / Wipro / Capgemini / Cognizant / Tech Mahindra
+    Format: aptitude, then technical + HR, often a combined panel.
+    They will ask definitions: what is REST, what is a primary key, difference
+    between GET and POST, what is a foreign key, what is a join, what is
+    normalization. Have crisp one-line answers ready.
+    Then they will ask you to explain your project for two minutes. Use the
+    intro in section 1, shortened.
+    They rarely probe architecture deeply, but they do check that you understand
+    what you wrote. Do not use a term you cannot define.
+
+  Accenture
+    More process and communication oriented. Expect "how do you handle a
+    requirement change", "how do you test", "how do you document". The docs
+    folder and the setup guide are your evidence. Mention the deployment
+    checklist and the env-var matrix.
+
+  Flipkart / Paytm / Razorpay
+    Expect depth and follow-ups on follow-ups. Prepare:
+    - the exact refresh-token rotation flow, including reuse detection
+    - why async, and the throughput vs latency distinction
+    - transaction boundaries on the move endpoint
+    - how you would add pagination without breaking the board
+    - how you would test the permission matrix
+    - a bug you diagnosed from a log, end to end
+    They respect "I do not know, here is how I would find out" far more than a
+    confident wrong answer.
+
+--------------------------------------------------------------------------------
+8. LAST 48 HOURS CHECKLIST
+--------------------------------------------------------------------------------
+  [ ] Run the app locally once and click every page. Know what is broken.
+  [ ] Re-read project-spec.txt sections 5, 6 and 7 - architecture, schema, API.
+  [ ] Say the 60-second intro out loud five times, timed.
+  [ ] Practise the gap script until it sounds like ownership, not apology.
+  [ ] Have the repo open in a browser tab and Swagger open in another.
+  [ ] Prepare two questions for them.
+  [ ] Know your own resume bullets word for word (resume-bullets.txt).
+  [ ] Sleep. A tired explanation of a good project loses to a fresh one.
+================================================================================

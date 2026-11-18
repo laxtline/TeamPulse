@@ -83,14 +83,14 @@ function LoginForm() {
           <CardTitle>Welcome back</CardTitle>
           <CardDescription>Sign in to your TeamPulse account</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3.5">
           {(error || formError) && (
             <div className="p-3 rounded-md bg-red-50 text-red-600 text-sm dark:bg-red-900/20 dark:text-red-400">
               {formError || (error === 'CredentialsSignin' ? 'Invalid email or password' : 'An error occurred. Please try again.')}
             </div>
           )}
 
-          <form onSubmit={handleSubmit(handleSubmitForm)} className="space-y-4">
+          <form onSubmit={handleSubmit(handleSubmitForm)} className="space-y-3.5">
             <Input
               label="Email"
               type="email"
@@ -107,7 +107,21 @@ function LoginForm() {
               error={errors.password?.message}
               {...register('password')}
               leftIcon={<Lock className="h-4 w-4" />}
+              showToggle
             />
+
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="rounded border-input" />
+                <span className="text-surface-600 dark:text-surface-400">Remember me</span>
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-sm text-primary-600 hover:underline font-medium"
+              >
+                Forgot password?
+              </Link>
+            </div>
 
             <Button type="submit" className="w-full" loading={isLoading}>
               Sign in
@@ -149,17 +163,18 @@ function LoginForm() {
             </Link>
           </p>
 
-          <div className="p-3 rounded-md bg-surface-100 dark:bg-surface-800 text-xs text-surface-600 dark:text-surface-400">
-            <strong>Demo Credentials:</strong>
-            <br />
-            admin@teampulse.ac / Passcode@9938 (admin)
-            <br />
-            arjun@teampulse.ac / Passcode@9938
-            <br />
-            priya@teampulse.ac / Passcode@9938
-            <br />
-            rohan@teampulse.ac / Passcode@9938
-          </div>
+          {/* Demo credentials - only show in development */}
+          {process.env.NODE_ENV === 'development' && (
+            <details className="group">
+              <summary className="text-xs text-surface-500 dark:text-surface-400 cursor-pointer select-none">
+                Demo credentials (dev only)
+              </summary>
+              <div className="mt-2 p-3 rounded-md bg-surface-100 dark:bg-surface-800 text-xs text-surface-600 dark:text-surface-400">
+                <strong>Admin:</strong> admin@teampulse.ac / Passcode@9938<br />
+                <strong>Users:</strong> arjun@, priya@, rohan@teampulse.ac / Passcode@9938
+              </div>
+            </details>
+          )}
         </CardContent>
       </Card>
     </div>
