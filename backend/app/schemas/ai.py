@@ -36,3 +36,13 @@ class ProjectInsightsResponse(BaseModel):
     velocity_trend: list[dict]
     workload_distribution: list[dict]
     ai_summary: str
+
+
+class ProjectSummaryRequest(BaseModel):
+    project_name: str
+    total_tasks: int
+    status_counts: dict[str, int]
+    total_points: int
+    done_points: int
+    overdue: int
+    workload: list[dict]

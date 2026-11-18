@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { projectsApi, tasksApi, aiApi } from '@/lib/api'
+import { projectsApi, tasksApi, aiApi, teamsApi } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -42,6 +42,12 @@ export default function ProjectAnalyticsPage() {
     enabled: !!projectId,
   })
 
+  const { data: team } = useQuery({
+    queryKey: ['team', teamId],
+    queryFn: () => teamsApi.get(teamId),
+    enabled: !!teamId,
+  })
+
   if (isLoading) {
     return (
       <div className="p-6 flex items-center justify-center h-64">
@@ -76,14 +82,21 @@ export default function ProjectAnalyticsPage() {
     count: allTasks.filter((task) => task.status === status.value).length,
   }))
 
-  // The task list does not embed assignees, so group by id and fall back to a
-  // short id label when we have never seen the person's name.
+  // The task list does not embed assignees, so resolve ids through the team's
+  // member list and fall back to a short id label when someone has left.
+  const nameById = (team?.members || []).reduce<Record<string, string>>((acc, member) => {
+    acc[member.user_id] = member.user_full_name
+    return acc
+  }, {})
+
   const workload = Object.values(
     allTasks.reduce<Record<string, { user: string; tasks: number; points: number }>>((acc, task) => {
       const key = task.assignee_id || 'unassigned'
       if (!acc[key]) {
         acc[key] = {
-          user: task.assignee?.full_name || (task.assignee_id ? task.assignee_id.slice(0, 8) : 'Unassigned'),
+          user:
+            (task.assignee_id && nameById[task.assignee_id]) ||
+            (task.assignee_id ? task.assignee_id.slice(0, 8) : 'Unassigned'),
           tasks: 0,
           points: 0,
         }

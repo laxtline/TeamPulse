@@ -2,7 +2,13 @@ from typing import Optional
 import httpx
 import json
 from app.core.config import get_settings
-from app.schemas.ai import StandupSummaryRequest, StandupSummaryResponse, TaskPriorityRequest, TaskPriorityResponse
+from app.schemas.ai import (
+    ProjectSummaryRequest,
+    StandupSummaryRequest,
+    StandupSummaryResponse,
+    TaskPriorityRequest,
+    TaskPriorityResponse,
+)
 
 settings = get_settings()
 
@@ -36,6 +42,25 @@ class AIService:
             return TaskPriorityResponse(**response.json())
         except Exception:
             return self._fallback_priority(request)
+
+    async def generate_project_summary(self, request: ProjectSummaryRequest) -> str:
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/project-summary",
+                json=request.model_dump(),
+            )
+            response.raise_for_status()
+            summary = response.json().get("summary", "")
+            if summary:
+                return summary
+        except Exception:
+            pass
+
+        return (
+            f"{request.project_name} has {request.total_tasks} tasks with "
+            f"{request.done_points} of {request.total_points} story points delivered"
+            + (f" and {request.overdue} overdue." if request.overdue else " and nothing overdue.")
+        )
 
     async def get_project_insights(self, project_id: str) -> dict:
         try:

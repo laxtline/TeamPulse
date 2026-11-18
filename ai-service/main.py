@@ -6,6 +6,8 @@ from schemas import (
     StandupSummaryResponse,
     TaskPriorityRequest,
     TaskPriorityResponse,
+    ProjectSummaryRequest,
+    ProjectSummaryResponse,
 )
 import httpx
 
@@ -99,6 +101,46 @@ PRIORITIES:
         ]
 
         return StandupSummaryResponse(summary=summary, priorities=priorities)
+
+
+@app.post("/project-summary", response_model=ProjectSummaryResponse)
+async def project_summary(request: ProjectSummaryRequest):
+    statuses = ", ".join(f"{name}: {count}" for name, count in request.status_counts.items()) or "none"
+    workload = (
+        ", ".join(f"{item.get('user')} ({item.get('tasks')} tasks)" for item in request.workload[:5])
+        or "unassigned"
+    )
+
+    user_prompt = f"""Write a status summary for the project {request.project_name}.
+
+Total tasks: {request.total_tasks}
+By status: {statuses}
+Story points delivered: {request.done_points} of {request.total_points}
+Overdue tasks: {request.overdue}
+Workload: {workload}
+
+Reply with one short paragraph (2-3 sentences) of plain prose. No headings,
+no bullet points, no markdown."""
+
+    fallback = (
+        f"{request.project_name} has {request.total_tasks} tasks with "
+        f"{request.done_points} of {request.total_points} story points delivered"
+        + (f" and {request.overdue} overdue." if request.overdue else " and nothing overdue.")
+    )
+
+    try:
+        response = await groq_client.chat_completion(
+            messages=[
+                {"role": "system", "content": "You are a concise engineering project analyst."},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.4,
+            max_tokens=500,
+        )
+        content = (response.choices[0].message.content or "").strip()
+        return ProjectSummaryResponse(summary=content or fallback)
+    except Exception:
+        return ProjectSummaryResponse(summary=fallback)
 
 
 @app.post("/task-priority", response_model=TaskPriorityResponse)

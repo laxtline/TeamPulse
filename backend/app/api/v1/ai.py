@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
+from datetime import datetime, timezone
 from app.schemas.ai import (
     StandupSummaryRequest,
     StandupSummaryResponse,
@@ -8,13 +9,14 @@ from app.schemas.ai import (
     TaskPriorityResponse,
     ProjectInsightsRequest,
     ProjectInsightsResponse,
+    ProjectSummaryRequest,
 )
 from app.services.ai import AIService
 from app.services.task import TaskService
 from app.services.activity import ActivityService
 from app.dependencies.auth import get_current_user, get_db
 from app.models.user import User
-from app.models.project import Task
+from app.models.project import Task, Project
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -55,14 +57,51 @@ async def get_project_insights(
 ):
     task_service = TaskService(db)
     tasks = await task_service.get_project_tasks(project_id, current_user.id)
+    project = await db.get(Project, project_id)
+
+    status_counts: dict[str, int] = {}
+    for task in tasks:
+        status_counts[task.status] = status_counts.get(task.status, 0) + 1
+
+    workload: dict[str, dict] = {}
+    for task in tasks:
+        name = task.assignee.full_name if task.assignee else "Unassigned"
+        entry = workload.setdefault(name, {"user": name, "tasks": 0, "points": 0})
+        entry["tasks"] += 1
+        entry["points"] += task.story_points or 0
+
+    now = datetime.now(timezone.utc)
+    total_points = sum(task.story_points or 0 for task in tasks)
+    done_points = sum(task.story_points or 0 for task in tasks if task.status == "done")
+    overdue = sum(
+        1
+        for task in tasks
+        if task.due_date and task.status != "done" and task.due_date < now
+    )
+
+    summary_request = ProjectSummaryRequest(
+        project_name=project.name if project else "This project",
+        total_tasks=len(tasks),
+        status_counts=status_counts,
+        total_points=total_points,
+        done_points=done_points,
+        overdue=overdue,
+        workload=sorted(workload.values(), key=lambda item: item["tasks"], reverse=True),
+    )
 
     ai_service = AIService()
     try:
-        response = await ai_service.get_project_insights(str(project_id))
+        ai_summary = await ai_service.generate_project_summary(summary_request)
     finally:
         await ai_service.close()
 
-    return ProjectInsightsResponse(**response)
+    return ProjectInsightsResponse(
+        velocity_trend=[
+            {"status": name, "count": count} for name, count in status_counts.items()
+        ],
+        workload_distribution=list(workload.values()),
+        ai_summary=ai_summary,
+    )
 
 
 @router.post("/my-standup", response_model=StandupSummaryResponse)

@@ -14,6 +14,20 @@ class StandupSummaryResponse(BaseModel):
     priorities: list[str]
 
 
+class ProjectSummaryRequest(BaseModel):
+    project_name: str
+    total_tasks: int
+    status_counts: dict[str, int]
+    total_points: int
+    done_points: int
+    overdue: int
+    workload: list[dict]
+
+
+class ProjectSummaryResponse(BaseModel):
+    summary: str
+
+
 class TaskPriorityRequest(BaseModel):
     task_title: str
     task_description: Optional[str] = None
