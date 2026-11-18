@@ -32,6 +32,31 @@ function accessTokenExpiresAt(token?: string): number | null {
   }
 }
 
+/**
+ * The API runs on a free Render instance that sleeps when idle. Waking it takes
+ * up to a minute, so retry once with a generous timeout instead of letting the
+ * whole sign-in fail the first time somebody logs in after a quiet spell.
+ */
+async function fetchBackend(
+  path: string,
+  init: RequestInit,
+  attempts = 2,
+  timeoutMs = 25_000
+): Promise<Response> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fetch(`${API_URL}${path}`, {
+        ...init,
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Backend unreachable')
+}
+
 async function refreshAccessToken(token: JWT): Promise<JWT> {
   try {
     const response = await fetch(`${API_URL}/api/v1/auth/refresh`, {
@@ -68,13 +93,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const email = String(credentials.email)
         const password = String(credentials.password)
 
-        const response = await fetch(`${API_URL}/api/v1/auth/login`, {
+        const response = await fetchBackend('/api/v1/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password }),
-        })
+        }).catch(() => null)
 
-        if (!response.ok) return null
+        if (!response || !response.ok) return null
 
         const data = await response.json()
         return {
@@ -104,27 +129,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       if (account?.provider === 'google' || account?.provider === 'github') {
-        const response = await fetch(`${API_URL}/api/v1/auth/oauth/${account.provider}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            provider: account.provider,
-            provider_user_id: account.providerAccountId,
-            email: user?.email,
-            full_name: user?.name || user?.email || 'TeamPulse User',
-            avatar_url: user?.image ?? null,
-          }),
-        })
+        try {
+          const response = await fetchBackend(`/api/v1/auth/oauth/${account.provider}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider: account.provider,
+              provider_user_id: account.providerAccountId,
+              email: user?.email ?? token.email,
+              full_name: user?.name || user?.email || 'TeamPulse User',
+              avatar_url: user?.image ?? null,
+            }),
+          })
 
-        if (response.ok) {
-          const data = await response.json()
-          token.accessToken = data.access_token
-          token.refreshToken = data.refresh_token
-          token.id = userIdFromAccessToken(data.access_token) ?? token.id
-        } else {
-          // Keep the user signed in with the provider, but API calls will fail
-          // loudly instead of silently pretending we have a backend session.
-          console.error('Backend OAuth exchange failed:', response.status)
+          if (response.ok) {
+            const data = await response.json()
+            token.accessToken = data.access_token
+            token.refreshToken = data.refresh_token
+            token.id = userIdFromAccessToken(data.access_token) ?? token.id
+          } else {
+            // Keep the user signed in with the provider, but API calls will fail
+            // loudly instead of silently pretending we have a backend session.
+            console.error('Backend OAuth exchange failed:', response.status)
+            token.error = 'BackendOAuthFailed'
+          }
+        } catch (error) {
+          // Throwing here would bounce the user back to /login with a generic
+          // "an error occurred"; keep the session and let the UI explain.
+          console.error('Backend OAuth exchange did not complete:', error)
+          token.error = 'BackendOAuthFailed'
         }
       }
 
@@ -140,6 +173,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.accessToken = token.accessToken as string
       session.refreshToken = token.refreshToken as string
       session.user.id = token.id as string
+      // Surfaced so the UI can explain a failed backend handshake instead of
+      // showing empty pages after an otherwise successful OAuth login.
+      session.error = token.error as string | undefined
       return session
     },
   },

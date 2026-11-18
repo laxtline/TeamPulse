@@ -1,0 +1,30 @@
+name: Keep the free API awake
+
+# Render spins free web services down after 15 minutes without traffic, and a
+# cold start takes ~50 seconds. Server-side flows (the OAuth callback in
+# particular) run inside a Vercel function with a short time budget, so a
+# sleeping API turns a successful GitHub/Google login into a generic error.
+# A cheap health ping every 10 minutes keeps it warm. Remove this workflow once
+# the services move to a paid plan.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the API health endpoint
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 \
+              https://teampulse-api-ep2v.onrender.com/health || echo 000)
+            echo "attempt $i -> HTTP $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 20
+          done
+          echo "API did not come back healthy" >&2
+          exit 1

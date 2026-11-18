@@ -14,6 +14,7 @@ declare module '@auth/core/types' {
   interface Session {
     accessToken?: string
     refreshToken?: string
+    error?: string
     user: User & {
       id: string
       full_name?: string | null

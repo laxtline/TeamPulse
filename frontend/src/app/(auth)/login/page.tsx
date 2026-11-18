@@ -70,6 +70,30 @@ function LoginForm() {
     signIn(provider, { callbackUrl })
   }
 
+  // NextAuth bounces failures back here as ?error=<Code>; translate the codes
+  // that actually happen so the message says what to do next.
+  const oauthErrorMessages: Record<string, string> = {
+    OAuthCallback:
+      'The provider approved the sign-in but our API did not finish the handshake. It was probably waking up — try again in a few seconds.',
+    OAuthSignin:
+      'Could not start the sign-in with that provider. Check the OAuth app configuration and try again.',
+    OAuthAccountNotLinked:
+      'That email already has an account with a different sign-in method. Use the original method or email & password.',
+    AccessDenied: 'The provider denied access. Approve the app to continue.',
+    Configuration: 'Sign-in is misconfigured on this deployment.',
+    Verification: 'That sign-in link has expired. Try again.',
+    BackendOAuthFailed:
+      'Signed in with the provider, but the API session could not be created. Try again in a few seconds.',
+  }
+
+  const errorMessage = formError
+    ? formError
+    : error === 'CredentialsSignin'
+      ? 'Invalid email or password'
+      : error
+        ? oauthErrorMessages[error] || `Sign-in failed (${error}). Please try again.`
+        : null
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white dark:from-surface-900 dark:to-surface-950 p-4">
       <Toaster />
@@ -84,9 +108,9 @@ function LoginForm() {
           <CardDescription>Sign in to your TeamPulse account</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3.5">
-          {(error || formError) && (
+          {errorMessage && (
             <div className="p-3 rounded-md bg-red-50 text-red-600 text-sm dark:bg-red-900/20 dark:text-red-400">
-              {formError || (error === 'CredentialsSignin' ? 'Invalid email or password' : 'An error occurred. Please try again.')}
+              {errorMessage}
             </div>
           )}
 
