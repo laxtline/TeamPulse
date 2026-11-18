@@ -1,0 +1,68 @@
+# Render Blueprint for TeamPulse
+# Topology: Vercel (frontend) -> Render (API) -> Render (AI service)
+#           Render (API) -> Neon Postgres + Upstash Redis
+#
+# Secrets (marked `sync: false`) are never committed. They are set in the
+# Render dashboard / API: DATABASE_URL, REDIS_URL, GROQ_API_KEY.
+services:
+  - type: web
+    name: team-pulse-api
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    rootDir: backend
+    dockerfilePath: ./backend/Dockerfile.prod
+    dockerContext: ./backend
+    healthCheckPath: /health/ready
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "15"
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "7"
+      - key: WEB_CONCURRENCY
+        value: "2"
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_MAX_OVERFLOW
+        value: "5"
+      - key: FRONTEND_URL
+        value: https://team-pulse-lilac.vercel.app
+      - key: CORS_ORIGINS
+        value: https://team-pulse-lilac.vercel.app,https://teampulse.vercel.app,http://localhost:3000
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: AI_SERVICE_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+
+  - type: web
+    name: team-pulse-ai
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    rootDir: ai-service
+    dockerfilePath: ./ai-service/Dockerfile.prod
+    dockerContext: ./ai-service
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GROQ_API_KEY
+        sync: false

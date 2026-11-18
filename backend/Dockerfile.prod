@@ -42,10 +42,12 @@ ENV PATH=/home/appuser/.local/bin:$PATH
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health/ready', timeout=5)"
+    CMD python -c "import httpx; httpx.get('http://localhost:' + __import__('os').getenv('PORT', '8000') + '/health/live', timeout=5)"
 
-# Expose port
+# Expose port (Render overrides this with $PORT)
+ENV PORT=8000 \
+    WEB_CONCURRENCY=2
 EXPOSE 8000
 
 # Run migrations and start server
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"]
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --proxy-headers --forwarded-allow-ips=*"]

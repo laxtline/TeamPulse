@@ -1,7 +1,8 @@
-import os
-import httpx
+import json
+from types import SimpleNamespace
 from typing import Optional
 from pydantic_settings import BaseSettings
+import httpx
 
 
 class GroqSettings(BaseSettings):
@@ -50,7 +51,18 @@ class GroqClient:
             json=payload
         )
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+
+        # Normalise the OpenAI/Groq JSON payload into the attribute-style shape
+        # the endpoints expect (`response.choices[0].message.content`).
+        try:
+            content = data["choices"][0]["message"]["content"] or ""
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError(f"Unexpected Groq response: {data}") from exc
+
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+        )
 
     async def close(self):
         await self.client.aclose()
