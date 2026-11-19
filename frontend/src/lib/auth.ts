@@ -110,6 +110,44 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
   return request
 }
 
+/**
+ * Auth.js collapses every unexpected exception into a generic "Configuration"
+ * error, which says nothing about what actually broke. Describe the exception
+ * (and its nested causes) so the API route can forward it to our diagnostics
+ * endpoint instead of us having to guess.
+ */
+function describeError(value: unknown, depth = 0): Record<string, unknown> {
+  if (!value || depth > 4) return {}
+
+  if (value instanceof Error) {
+    const extra = value as Error & { type?: string; code?: string; status?: number }
+    const described: Record<string, unknown> = {
+      name: value.name,
+      message: value.message,
+    }
+    if (extra.type) described.type = extra.type
+    if (extra.code) described.code = extra.code
+    if (extra.status) described.status = extra.status
+    if (value.cause) described.cause = describeError(value.cause, depth + 1)
+    return described
+  }
+
+  if (typeof value === 'object') {
+    const described: Record<string, unknown> = {}
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      described[key] =
+        item instanceof Error || (item && typeof item === 'object')
+          ? describeError(item, depth + 1)
+          : item
+    }
+    return described
+  }
+
+  return { value: String(value) }
+}
+
+type AuthErrorSlot = { __teampulseAuthError?: Record<string, unknown> }
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Credentials({
@@ -263,6 +301,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     maxAge: 7 * 24 * 60 * 60,
   },
   secret: process.env.NEXTAUTH_SECRET,
+  logger: {
+    error(error) {
+      // Same-process hand-off: the auth route reads this right after the
+      // handler returns and posts it to the API diagnostics endpoint.
+      ;(globalThis as AuthErrorSlot).__teampulseAuthError = describeError(error)
+    },
+  },
   // Vercel and most reverse proxies forward the host header, which NextAuth
   // rejects unless we trust it.
   trustHost: true,
