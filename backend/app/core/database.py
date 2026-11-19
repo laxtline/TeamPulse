@@ -1,10 +1,13 @@
+import logging
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres", "db", "host.docker.internal", "redis"}
 
@@ -82,9 +85,35 @@ async def get_db() -> AsyncSession:
             await session.close()
 
 
+# Columns that were added after the first release.
+#
+# Base.metadata.create_all() only creates missing *tables*: it never adds a
+# column to a table that already exists. So a database created before these
+# fields appeared kept the old shape, and every SELECT on users failed with
+# UndefinedColumn - surfaced as a blanket 503 "Database temporarily
+# unavailable". Free Render instances have no shell to run alembic, so the
+# additive migrations are applied here. "IF NOT EXISTS" makes each one a no-op
+# once the column is in place.
+ADDITIVE_COLUMNS = (
+    ("users", "bio", "VARCHAR(1000)"),
+    ("users", "theme", "VARCHAR(10) NOT NULL DEFAULT 'system'"),
+)
+
+
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        for table, column, ddl in ADDITIVE_COLUMNS:
+            try:
+                await conn.execute(
+                    text(f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS "{column}" {ddl}')
+                )
+            except Exception as exc:
+                # Never stop the boot for this: /health/ready reports the real
+                # state, and a genuinely unreachable database is already logged
+                # by the caller.
+                logger.warning("Could not ensure %s.%s exists: %s", table, column, exc)
 
 
 async def ping_db() -> bool:

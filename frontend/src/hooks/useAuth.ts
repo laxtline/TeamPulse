@@ -23,22 +23,22 @@ export function useAuth() {
   )
 
   const logout = useCallback(async () => {
-    // Tell the API first (this clears its httpOnly cookies), but never let a
-    // failing API call keep the user signed in locally.
-    try {
-      await authApi.logout()
-    } catch (error) {
-      console.error('Logout error:', error)
-    }
-
     clearTokenCache()
 
+    // Sign out locally FIRST. Waiting on the API used to freeze the button for
+    // up to 25s whenever Render was cold or the database was down, which looked
+    // like "Log out does nothing" from some pages.
+    //
     // redirect:false + router.replace works from any dashboard page. The old
     // code relied on signOut's redirect while also racing a router.push, and
     // inside nested routes the session cookie sometimes survived.
     await signOut({ redirect: false })
     router.replace('/login')
     router.refresh()
+
+    // Best effort: revoke the refresh token server-side. Never block the UI on
+    // it, and never let a failure keep the user signed in.
+    authApi.logout().catch(() => {})
   }, [router])
 
   return {
