@@ -27,7 +27,7 @@ async function sendDiagnostics(path: string, error: Record<string, unknown>) {
         'X-Diag-Key': DIAG_KEY,
       },
       body: JSON.stringify({ source: path, ...error }),
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(8000),
       cache: 'no-store',
     })
   } catch {
