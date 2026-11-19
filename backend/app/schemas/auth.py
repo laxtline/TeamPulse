@@ -17,6 +17,7 @@ class LoginRequest(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
     full_name: str = Field(min_length=1, max_length=255)
+    avatar_url: Optional[str] = None
 
 
 class ChangePasswordRequest(BaseModel):

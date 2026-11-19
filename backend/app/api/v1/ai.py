@@ -16,7 +16,8 @@ from app.services.task import TaskService
 from app.services.activity import ActivityService
 from app.dependencies.auth import get_current_user, get_db
 from app.models.user import User
-from app.models.project import Task, Project
+from app.models.task import Task
+from app.models.project import Project
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 

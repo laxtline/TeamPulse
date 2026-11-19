@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { MemberTable } from '@/components/teams/MemberTable'
 import { InviteModal } from '@/components/teams/InviteModal'
 import { CreateTeamModal } from '@/components/teams/CreateTeamModal'
+import { ProjectModal } from '@/components/teams/ProjectModal'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -25,6 +26,8 @@ export default function TeamDetailPage() {
   const queryClient = useQueryClient()
   const [isInviteOpen, setIsInviteOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false)
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
 
   const { data: team, isLoading } = useQuery({
     queryKey: ['teams', teamId],
@@ -93,10 +96,19 @@ export default function TeamDetailPage() {
               Invite Member
             </Button>
             {isOwner && (
-              <Button variant="outline" onClick={() => setIsSettingsOpen(true)}>
-                <Settings className="h-4 w-4 mr-2" />
-                Settings
-              </Button>
+              <>
+                <Button variant="outline" onClick={() => {
+                  setEditingProject(null)
+                  setIsProjectModalOpen(true)
+                }}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Project
+                </Button>
+                <Button variant="outline" onClick={() => setIsSettingsOpen(true)}>
+                  <Settings className="h-4 w-4 mr-2" />
+                  Settings
+                </Button>
+              </>
             )}
           </div>
         }
@@ -197,6 +209,17 @@ export default function TeamDetailPage() {
         </TabsContent>
 
         <TabsContent value="projects">
+          <div className="flex justify-end mb-4">
+            {isOwner && (
+              <Button onClick={() => {
+                setEditingProject(null)
+                setIsProjectModalOpen(true)
+              }}>
+                <Plus className="h-4 w-4 mr-2" />
+                New Project
+              </Button>
+            )}
+          </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {team.projects?.map((project) => (
               <Link key={project.id} href={`/teams/${team.id}/projects/${project.id}`}>
@@ -270,6 +293,16 @@ export default function TeamDetailPage() {
         onClose={() => setIsInviteOpen(false)}
         onSubmit={inviteMutation.mutateAsync}
         isLoading={inviteMutation.isPending}
+      />
+
+      <ProjectModal
+        teamId={team.id}
+        isOpen={isProjectModalOpen}
+        onClose={() => {
+          setIsProjectModalOpen(false)
+          setEditingProject(null)
+        }}
+        project={editingProject || undefined}
       />
     </div>
   )

@@ -58,7 +58,7 @@ async def get_team(team_id: uuid.UUID, current_user: User = Depends(get_current_
         ))
 
     from app.schemas.team import ProjectBrief
-    from app.models.project import Task
+    from app.models.task import Task
     from sqlalchemy import func
 
     # One query for all the project task counts instead of one per project.

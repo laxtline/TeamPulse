@@ -6,7 +6,8 @@ from app.schemas.comment import CommentCreate, CommentUpdate, CommentResponse
 from app.services.comment import CommentService
 from app.dependencies.auth import get_current_user, get_db
 from app.models.user import User
-from app.models.project import Project, Task
+from app.models.project import Project
+from app.models.task import Task
 from app.models.team import TeamMember
 from app.services.websocket import manager
 

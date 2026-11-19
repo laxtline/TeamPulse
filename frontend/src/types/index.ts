@@ -107,6 +107,17 @@ export interface StandupSummary {
   priorities: string[]
 }
 
+export interface NotificationPreferences {
+  user_id: string
+  email_enabled: boolean
+  push_enabled: boolean
+  task_assigned: boolean
+  task_updated: boolean
+  comments: boolean
+  mentions: boolean
+  weekly_digest: boolean
+}
+
 export interface WebSocketEvent {
   event: string
   data: any

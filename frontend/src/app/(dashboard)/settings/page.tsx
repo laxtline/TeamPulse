@@ -1,9 +1,9 @@
 'use client'
 
 import { useSession } from 'next-auth/react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { authApi } from '@/lib/api'
+import { authApi, notificationsApi } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
@@ -11,11 +11,33 @@ import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { Avatar } from '@/components/ui/Avatar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
+import { Textarea } from '@/components/ui/Textarea'
 import { Loader2, User, Shield, Bell, Key, Palette, Globe, Moon, Sun, Save, CheckCircle2, MessageSquare, Calendar } from 'lucide-react'
 import { Toaster } from '@/components/ui/Toaster'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useTheme } from 'next-themes'
+
+// Notification preferences type (matches backend schema)
+interface NotificationPreferences {
+  email_enabled: boolean
+  push_enabled: boolean
+  task_assigned: boolean
+  task_updated: boolean
+  comments: boolean
+  mentions: boolean
+  weekly_digest: boolean
+}
+
+const defaultNotifications: NotificationPreferences = {
+  email_enabled: true,
+  push_enabled: true,
+  task_assigned: true,
+  task_updated: true,
+  comments: true,
+  mentions: true,
+  weekly_digest: false,
+}
 
 export default function SettingsPage() {
   const { data: session } = useSession()
@@ -28,6 +50,8 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState({
     full_name: session?.user?.full_name || '',
     email: session?.user?.email || '',
+    bio: '',
+    avatar_url: session?.user?.avatar_url || '',
   })
 
   // Password form state
@@ -38,15 +62,29 @@ export default function SettingsPage() {
   })
 
   // Notification preferences
-  const [notifications, setNotifications] = useState({
-    email_notifications: true,
-    push_notifications: true,
-    task_assigned: true,
-    task_updated: true,
-    comments: true,
-    mentions: true,
-    weekly_digest: false,
-  })
+  const [notifications, setNotifications] = useState<NotificationPreferences>(defaultNotifications)
+  const [notificationsLoaded, setNotificationsLoaded] = useState(false)
+
+  // Load notification preferences from backend on mount
+  useEffect(() => {
+    notificationsApi.getPreferences()
+      .then((data) => {
+        setNotifications(data)
+        setNotificationsLoaded(true)
+      })
+      .catch(() => {
+        // Fallback to localStorage
+        const stored = localStorage.getItem('teampulse:notifications')
+        if (stored) {
+          try {
+            setNotifications(JSON.parse(stored))
+          } catch {
+            // Use defaults
+          }
+        }
+        setNotificationsLoaded(true)
+      })
+  }, [])
 
   const updateProfileMutation = useMutation({
     mutationFn: authApi.updateProfile,
@@ -65,15 +103,18 @@ export default function SettingsPage() {
       setPassword({ current_password: '', new_password: '', confirm_password: '' })
       toast.success('Password changed successfully')
     },
-    onError: () => {
-      toast.error('Failed to change password')
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.detail || 'Failed to change password')
     },
   })
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSaving(true)
-    await updateProfileMutation.mutateAsync({ full_name: profile.full_name })
+    await updateProfileMutation.mutateAsync({
+      full_name: profile.full_name,
+      avatar_url: profile.avatar_url || undefined,
+    })
     setIsSaving(false)
   }
 
@@ -91,9 +132,15 @@ export default function SettingsPage() {
 
   const handleNotificationsSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // No notification backend yet, so these preferences stay in the browser.
-    localStorage.setItem('teampulse:notifications', JSON.stringify(notifications))
-    toast.success('Notification preferences saved')
+    try {
+      await notificationsApi.updatePreferences(notifications)
+      localStorage.setItem('teampulse:notifications', JSON.stringify(notifications))
+      toast.success('Notification preferences saved')
+    } catch {
+      // Fallback to localStorage
+      localStorage.setItem('teampulse:notifications', JSON.stringify(notifications))
+      toast.success('Notification preferences saved locally')
+    }
   }
 
   return (
@@ -143,13 +190,17 @@ export default function SettingsPage() {
               <CardContent>
                 <form onSubmit={handleProfileSubmit} className="space-y-6">
                   <div className="flex items-center gap-6">
-                    <Avatar src={session?.user?.avatar_url} name={session?.user?.full_name ?? undefined} size="xl" />
+                    <Avatar src={profile.avatar_url ?? session?.user?.avatar_url} name={profile.full_name ?? session?.user?.full_name ?? undefined} size="xl" />
                     <div>
                       <h4 className="font-medium">Profile Picture</h4>
-                      <p className="text-sm text-surface-500">Gravatar is used for profile pictures</p>
-                      <Button type="button" variant="outline" size="sm" className="mt-2">
-                        Change Picture
-                      </Button>
+                      <p className="text-sm text-surface-500">Enter a URL for your avatar image</p>
+                      <Input
+                        label="Avatar URL"
+                        value={profile.avatar_url}
+                        onChange={(e) => setProfile({ ...profile, avatar_url: e.target.value })}
+                        placeholder="https://example.com/avatar.png"
+                        className="mt-2"
+                      />
                     </div>
                   </div>
 
@@ -163,14 +214,18 @@ export default function SettingsPage() {
                       label="Email"
                       type="email"
                       value={profile.email}
-                      onChange={(e) => setProfile({ ...profile, email: e.target.value })}
                       disabled
                     />
                   </div>
 
                   <div>
-                    <label className="label">Email</label>
-                    <Input type="email" value={profile.email} disabled />
+                    <label className="label">Bio</label>
+                    <Textarea
+                      value={profile.bio}
+                      onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
+                      rows={3}
+                      placeholder="Tell us about yourself..."
+                    />
                   </div>
 
                   <div className="flex justify-end pt-4 border-t border-border">
@@ -266,7 +321,13 @@ export default function SettingsPage() {
                 <CardDescription>Choose how you want to be notified</CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handleNotificationsSubmit} className="space-y-6">
+                {!notificationsLoaded ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
+                    <span className="ml-2 text-surface-500">Loading preferences...</span>
+                  </div>
+                ) : (
+                  <form onSubmit={handleNotificationsSubmit} className="space-y-6">
                   <div>
                     <h4 className="font-medium mb-4">Delivery Methods</h4>
                     <div className="space-y-3">
@@ -280,8 +341,8 @@ export default function SettingsPage() {
                         </div>
                         <input
                           type="checkbox"
-                          checked={notifications.email_notifications}
-                          onChange={(e) => setNotifications({ ...notifications, email_notifications: e.target.checked })}
+                          checked={notifications.email_enabled}
+                          onChange={(e) => setNotifications({ ...notifications, email_enabled: e.target.checked })}
                           className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500"
                         />
                       </label>
@@ -295,8 +356,8 @@ export default function SettingsPage() {
                         </div>
                         <input
                           type="checkbox"
-                          checked={notifications.push_notifications}
-                          onChange={(e) => setNotifications({ ...notifications, push_notifications: e.target.checked })}
+                          checked={notifications.push_enabled}
+                          onChange={(e) => setNotifications({ ...notifications, push_enabled: e.target.checked })}
                           className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500"
                         />
                       </label>
@@ -322,7 +383,7 @@ export default function SettingsPage() {
                           </div>
                           <input
                             type="checkbox"
-                            checked={notifications[item.key as keyof typeof notifications]}
+                            checked={notifications[item.key as keyof NotificationPreferences]}
                             onChange={(e) => setNotifications({ ...notifications, [item.key]: e.target.checked })}
                             className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500"
                           />
@@ -357,6 +418,7 @@ export default function SettingsPage() {
                     </Button>
                   </div>
                 </form>
+              )}
               </CardContent>
             </Card>
           )}

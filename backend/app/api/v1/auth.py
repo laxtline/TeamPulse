@@ -137,6 +137,8 @@ async def update_profile(
     db: AsyncSession = Depends(get_db),
 ):
     current_user.full_name = data.full_name
+    if data.avatar_url is not None:
+        current_user.avatar_url = data.avatar_url
     await db.commit()
     await db.refresh(current_user)
     return UserResponse.model_validate(current_user)

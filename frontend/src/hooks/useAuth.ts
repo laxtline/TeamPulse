@@ -1,6 +1,7 @@
 import { useSession, signIn, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useCallback } from 'react'
+import { authApi } from '@/lib/api'
 
 export function useAuth() {
   const { data: session, status } = useSession()
@@ -21,8 +22,13 @@ export function useAuth() {
     []
   )
 
-  const logout = useCallback(() => {
-    return signOut({ callbackUrl: '/login', redirect: true })
+  const logout = useCallback(async () => {
+    try {
+      await authApi.logout()
+    } catch (error) {
+      console.error('Logout error:', error)
+    }
+    signOut({ callbackUrl: '/login', redirect: true })
   }, [])
 
   return {

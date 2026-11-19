@@ -48,6 +48,10 @@ from app.schemas.ai import (
     ProjectInsightsRequest,
     ProjectInsightsResponse,
 )
+from app.schemas.notification import (
+    NotificationPreferenceResponse,
+    NotificationPreferenceUpdate,
+)
 
 __all__ = [
     "RegisterRequest",
@@ -88,4 +92,6 @@ __all__ = [
     "TaskPriorityResponse",
     "ProjectInsightsRequest",
     "ProjectInsightsResponse",
+    "NotificationPreferenceResponse",
+    "NotificationPreferenceUpdate",
 ]

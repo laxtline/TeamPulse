@@ -6,8 +6,9 @@ from sqlalchemy import select
 from app.core.database import init_db, async_session_maker
 from app.models.user import User
 from app.models.team import Team, TeamMember
-from app.models.project import Project, Task
-from app.models.comment import Comment, Activity
+from app.models.project import Project
+from app.models.task import Task
+from app.models.comment import Comment
 from app.core.security import get_password_hash
 
 

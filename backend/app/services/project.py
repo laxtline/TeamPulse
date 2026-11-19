@@ -3,7 +3,8 @@ import uuid
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.models.project import Project, Task
+from app.models.project import Project
+from app.models.task import Task
 from app.models.team import TeamMember
 from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.core.exceptions import NotFoundError, ForbiddenError, ValidationError

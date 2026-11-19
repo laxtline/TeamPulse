@@ -31,7 +31,8 @@ class User(Base):
     assigned_tasks: Mapped[list["Task"]] = relationship(back_populates="assignee", foreign_keys="Task.assignee_id")
     reported_tasks: Mapped[list["Task"]] = relationship(back_populates="reporter", foreign_keys="Task.reporter_id")
     comments: Mapped[list["Comment"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    activities: Mapped[list["Activity"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    activities: Mapped[list["TaskActivity"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    notification_preferences: Mapped["NotificationPreference"] = relationship(back_populates="user", cascade="all, delete-orphan", uselist=False)
 
 
 class OAuthAccount(Base):

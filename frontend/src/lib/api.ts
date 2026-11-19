@@ -3,6 +3,7 @@ import { getSession } from 'next-auth/react'
 import type {
   AIPriority,
   Comment,
+  NotificationPreferences,
   Project,
   StandupSummary,
   Task,
@@ -98,7 +99,7 @@ export const authApi = {
   logout: () => payload<{ message: string }>(api.post('/auth/logout')),
   me: () => payload<CurrentUserResponse>(api.get('/auth/me')),
   refresh: () => payload<TokenPair>(api.post('/auth/refresh')),
-  updateProfile: (data: { full_name: string }) => payload<User>(api.patch('/auth/me', data)),
+  updateProfile: (data: { full_name: string; avatar_url?: string }) => payload<User>(api.patch('/auth/me', data)),
   changePassword: (data: { current_password: string; new_password: string }) =>
     payload<{ message: string }>(api.post('/auth/change-password', data)),
   forgotPassword: (data: { email: string }) =>
@@ -188,4 +189,10 @@ export const aiApi = {
     payload<StandupSummary>(api.post('/ai/my-standup', null, { params: { date } })),
   projectInsights: (projectId: string) =>
     payload<Record<string, unknown>>(api.get(`/ai/insights/${projectId}`)),
+}
+
+export const notificationsApi = {
+  getPreferences: () => payload<NotificationPreferences>(api.get('/notifications/preferences')),
+  updatePreferences: (data: Partial<NotificationPreferences>) =>
+    payload<NotificationPreferences>(api.patch('/notifications/preferences', data)),
 }

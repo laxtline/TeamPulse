@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Menu, Bell, Sun, Moon, Monitor, User, LogOut, Settings } from 'lucide-react'
 import { useUIStore } from '@/store/uiStore'
@@ -14,6 +14,7 @@ import { Toaster } from '@/components/ui/Toaster'
 
 export function Navbar() {
   const pathname = usePathname()
+  const router = useRouter()
   const { user, logout } = useAuth()
   const { theme, setTheme, sidebarOpen, toggleSidebar } = useUIStore()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -30,10 +31,17 @@ export function Navbar() {
     setTheme(newTheme)
   }
 
+  const handleProfile = () => router.push('/settings?tab=profile')
+  const handleSettings = () => router.push('/settings?tab=security')
+  const handleLogout = async () => {
+    await logout()
+    router.push('/login')
+  }
+
   const userMenuItems: DropdownItem[] = [
-    { label: 'Profile', onClick: () => {}, icon: <User className="h-4 w-4" /> },
-    { label: 'Settings', onClick: () => {}, icon: <Settings className="h-4 w-4" /> },
-    { label: 'Log out', onClick: () => logout(), icon: <LogOut className="h-4 w-4" />, destructive: true },
+    { label: 'Profile', onClick: handleProfile, icon: <User className="h-4 w-4" /> },
+    { label: 'Settings', onClick: handleSettings, icon: <Settings className="h-4 w-4" /> },
+    { label: 'Log out', onClick: handleLogout, icon: <LogOut className="h-4 w-4" />, destructive: true },
   ]
 
   return (

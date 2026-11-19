@@ -4,10 +4,11 @@ from datetime import datetime, timezone
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
-from app.models.project import Project, Task
+from app.models.project import Project
+from app.models.task import Task, TaskActivity
 from app.models.team import TeamMember
 from app.models.user import User
-from app.models.comment import Comment, Activity
+from app.models.comment import Comment
 from app.schemas.task import TaskCreate, TaskUpdate, TaskMove, TaskAssign
 from app.core.exceptions import NotFoundError, ForbiddenError, ValidationError
 from app.services.activity import ActivityService
@@ -96,7 +97,7 @@ class TaskService:
                 joinedload(Task.assignee),
                 joinedload(Task.reporter),
                 selectinload(Task.comments).joinedload(Comment.user),
-                selectinload(Task.activities).joinedload(Activity.user)
+                selectinload(Task.activities).joinedload(TaskActivity.user)
             )
         )
         task = result.scalar_one_or_none()
