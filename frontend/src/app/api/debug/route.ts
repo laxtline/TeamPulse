@@ -30,6 +30,12 @@ export async function GET() {
       GITHUB_CLIENT_SECRET: has(process.env.GITHUB_CLIENT_SECRET),
       OAUTH_BRIDGE_SECRET: has(process.env.OAUTH_BRIDGE_SECRET),
       BACKEND_INTERNAL_URL: has(process.env.BACKEND_INTERNAL_URL),
+      BACKEND_INTERNAL_URL_HOST: process.env.BACKEND_INTERNAL_URL
+        ? new URL(process.env.BACKEND_INTERNAL_URL).host
+        : null,
+      NEXT_PUBLIC_API_URL_HOST: process.env.NEXT_PUBLIC_API_URL
+        ? new URL(process.env.NEXT_PUBLIC_API_URL).host
+        : null,
     },
   })
 }

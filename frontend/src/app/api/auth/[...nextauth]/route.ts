@@ -45,7 +45,12 @@ function withDiagnostics(handler: (request: NextRequest) => Promise<Response>) {
     const error = slot.__teampulseAuthError
     if (error) {
       slot.__teampulseAuthError = undefined
-      await sendDiagnostics(request.nextUrl.pathname, error)
+      await sendDiagnostics(request.nextUrl.pathname, {
+        ...error,
+        // Providers now add query parameters (e.g. `iss`) to the callback that
+        // Auth.js validates, so record what the provider actually sent.
+        query: request.nextUrl.search || null,
+      })
     }
 
     return response

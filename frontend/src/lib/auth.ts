@@ -207,6 +207,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     GitHub({
       clientId: process.env.GITHUB_CLIENT_ID,
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      // GitHub now returns `iss=https://github.com/login/oauth` on the OAuth
+      // callback. The @auth/core release we pin still declares the old
+      // placeholder issuer (`https://authjs.dev`), so the callback dies with
+      // `unexpected "iss" (issuer) response parameter value`. Current releases
+      // of @auth/core use exactly this value; setting it here is the same fix
+      // without a risky beta upgrade.
+      issuer: 'https://github.com/login/oauth',
     }),
   ],
   callbacks: {
@@ -241,7 +248,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             body: JSON.stringify({
               provider: account.provider,
               provider_user_id: account.providerAccountId,
-              email: user?.email ?? token.email,
+              // GitHub hides the email unless the user made it public or the
+              // app has the "Email addresses" permission. The API requires one,
+              // so fall back to GitHub's stable noreply address for this id.
+              email:
+                user?.email ??
+                token.email ??
+                `${account.providerAccountId}@users.noreply.github.com`,
               full_name: user?.name || user?.email || 'TeamPulse User',
               avatar_url: user?.image ?? null,
             }),
