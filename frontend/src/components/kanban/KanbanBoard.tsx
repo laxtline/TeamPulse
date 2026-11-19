@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { KanbanColumn } from './KanbanColumn'
-import { TaskModal } from './TaskModal'
+import { TaskModal, TaskAssignee } from './TaskModal'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { Task, TaskStatus } from '@/types'
 import { tasksApi } from '@/lib/api'
@@ -16,6 +16,7 @@ interface KanbanBoardProps {
   teamId: string
   initialTasks: Task[]
   currentUserId: string
+  members?: TaskAssignee[]
   onTaskMove?: (taskId: string, status: TaskStatus, position: number) => void
   onTaskUpdate?: (task: Task) => void
 }
@@ -25,6 +26,7 @@ export function KanbanBoard({
   teamId,
   initialTasks,
   currentUserId,
+  members = [],
   onTaskMove,
   onTaskUpdate,
 }: KanbanBoardProps) {
@@ -55,10 +57,17 @@ export function KanbanBoard({
     queryClient.invalidateQueries({ queryKey: ['tasks', updatedTask.id] })
   }
 
-  const handleCreateTask = async (data: any) => {
-    const newTask = await tasksApi.create(projectId, { ...data, status: creatingTaskStatus })
-    setTasks((prev) => [...prev, newTask])
-    queryClient.invalidateQueries({ queryKey: ['tasks', projectId] })
+  // One submit handler for both modes: editing used to fall through to
+  // tasksApi.create, which quietly duplicated the task instead of saving it.
+  const handleSubmitTask = async (data: any) => {
+    if (selectedTask) {
+      const updated = await tasksApi.update(projectId, selectedTask.id, data)
+      handleTaskUpdate(updated)
+    } else {
+      const newTask = await tasksApi.create(projectId, { ...data, status: creatingTaskStatus })
+      setTasks((prev) => [...prev, newTask])
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] })
+    }
     setIsModalOpen(false)
   }
 
@@ -126,8 +135,9 @@ export function KanbanBoard({
         task={selectedTask}
         projectId={projectId}
         defaultStatus={creatingTaskStatus}
-        onSubmit={handleCreateTask}
+        onSubmit={handleSubmitTask}
         onUpdate={handleTaskUpdate}
+        members={members}
       />
     </div>
   )

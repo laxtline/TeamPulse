@@ -1,18 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Task, TaskStatus, User } from '@/types'
+import { Task, TaskStatus } from '@/types'
 import { getPriorityColor, getStatusColor } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { Badge } from '@/components/ui/Badge'
 import { TASK_STATUSES, TASK_PRIORITIES, STORY_POINTS } from '@/lib/constants'
 import { formatDate } from '@/lib/utils'
+import { apiErrorMessage } from '@/lib/utils'
 
 const taskSchema = z.object({
   title: z.string().min(1, 'Title is required').max(500),
@@ -26,6 +27,15 @@ const taskSchema = z.object({
 
 type TaskFormData = z.infer<typeof taskSchema>
 
+/** ISO timestamp -> the "YYYY-MM-DDTHH:mm" that <input type="datetime-local"> wants. */
+function toDatetimeLocal(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 interface TaskModalProps {
   isOpen: boolean
   onClose: () => void
@@ -34,7 +44,14 @@ interface TaskModalProps {
   defaultStatus: TaskStatus
   onSubmit: (data: TaskFormData) => Promise<void>
   onUpdate?: (task: Task) => void
-  members?: User[]
+  members?: TaskAssignee[]
+}
+
+/** Only the fields the assignee picker needs, so any team-member shape fits. */
+export interface TaskAssignee {
+  id: string
+  full_name: string
+  avatar_url?: string | null
 }
 
 export function TaskModal({
@@ -49,11 +66,13 @@ export function TaskModal({
 }: TaskModalProps) {
   const isEditing = !!task
   const [dueDate, setDueDate] = useState<string>('')
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const {
     register,
     handleSubmit,
     setValue,
+    reset,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<TaskFormData>({
@@ -64,20 +83,42 @@ export function TaskModal({
       status: task?.status || defaultStatus,
       priority: task?.priority || 'medium',
       assignee_id: task?.assignee_id || null,
-      story_points: task?.story_points || null,
+      story_points: task?.story_points ?? null,
       due_date: task?.due_date || null,
     },
   })
+
+  // The modal stays mounted between openings, so a task opened second would
+  // show the previous task's values without an explicit reset.
+  useEffect(() => {
+    if (!isOpen) return
+    reset({
+      title: task?.title || '',
+      description: task?.description || '',
+      status: task?.status || defaultStatus,
+      priority: task?.priority || 'medium',
+      assignee_id: task?.assignee_id || null,
+      story_points: task?.story_points ?? null,
+      due_date: task?.due_date || null,
+    })
+    setDueDate(toDatetimeLocal(task?.due_date))
+  }, [isOpen, task, defaultStatus, reset])
 
   const watchedStatus = watch('status')
   const watchedAssignee = watch('assignee_id')
 
   const handleSubmitForm = async (data: TaskFormData) => {
+    setSubmitError(null)
     const submitData = {
       ...data,
       due_date: dueDate ? new Date(dueDate).toISOString() : null,
     }
-    await onSubmit(submitData)
+    try {
+      await onSubmit(submitData)
+    } catch (error) {
+      setSubmitError(apiErrorMessage(error, 'Could not save the task. Try again.'))
+      return
+    }
     onClose()
   }
 
@@ -141,7 +182,7 @@ export function TaskModal({
         <div>
           <label className="label">Assignee</label>
           <select
-            {...register('assignee_id')}
+            {...register('assignee_id', { setValueAs: (value) => (value === '' ? null : value) })}
             className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <option value="">Unassigned</option>
@@ -157,7 +198,10 @@ export function TaskModal({
           <div>
             <label className="label">Story Points</label>
             <select
-              {...register('story_points', { valueAsNumber: true })}
+              {...register('story_points', {
+                // An empty option must read as "no estimate", not NaN.
+                setValueAs: (value) => (value === '' || Number.isNaN(Number(value)) ? null : Number(value)),
+              })}
               className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="">None</option>
@@ -188,6 +232,10 @@ export function TaskModal({
               <p className="text-sm text-surface-600 dark:text-surface-400">{task.assignee.full_name}</p>
             </div>
           </div>
+        )}
+
+        {submitError && (
+          <p className="text-sm text-red-600 dark:text-red-400">{submitError}</p>
         )}
 
         <div className="flex justify-end gap-2 pt-4 border-t border-border">

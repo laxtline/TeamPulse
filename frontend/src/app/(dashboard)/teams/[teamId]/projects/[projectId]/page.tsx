@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi, tasksApi } from '@/lib/api'
+import { projectsApi, tasksApi, teamsApi } from '@/lib/api'
 import { KanbanBoard } from '@/components/kanban/KanbanBoard'
 import { Button } from '@/components/ui/Button'
 import { ArrowLeft, BarChart3, Settings } from 'lucide-react'
@@ -33,6 +33,20 @@ export default function ProjectKanbanPage() {
     queryFn: () => tasksApi.list(projectId),
     enabled: !!projectId,
   })
+
+  // The assignee picker needs the team's people; the board never received them
+  // before, so the dropdown only ever showed "Unassigned".
+  const { data: team } = useQuery({
+    queryKey: ['teams', teamId],
+    queryFn: () => teamsApi.get(teamId),
+    enabled: !!teamId,
+  })
+
+  const members = (team?.members ?? []).map((member) => ({
+    id: member.user_id,
+    full_name: member.user_full_name,
+    avatar_url: member.user_avatar_url,
+  }))
 
   const moveTaskMutation = useMutation({
     mutationFn: ({ taskId, status, position }: { taskId: string; status: string; position: number }) =>
@@ -98,6 +112,7 @@ export default function ProjectKanbanPage() {
           teamId={project.team_id}
           initialTasks={tasks ?? NO_TASKS}
           currentUserId={session?.user?.id || ''}
+          members={members}
           onTaskMove={(taskId, status, position) => {
             moveTaskMutation.mutate({ taskId, status, position })
           }}

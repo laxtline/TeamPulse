@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, ForeignKey, Enum as SQLEnum, Float, DateTime, Index, JSON
+from sqlalchemy import String, Text, ForeignKey, Float, DateTime, Index, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.core.database import Base
@@ -29,8 +29,15 @@ class Task(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[TaskStatus] = mapped_column(SQLEnum(TaskStatus), default=TaskStatus.backlog, nullable=False, index=True)
-    priority: Mapped[TaskPriority] = mapped_column(SQLEnum(TaskPriority), default=TaskPriority.medium, nullable=False)
+    # Plain strings, not native Postgres enums.
+    #
+    # The columns were created as VARCHAR by the original schema, and
+    # create_all() never changes an existing column's type. Declaring
+    # SQLEnum(...) here made SQLAlchemy send $1::taskstatus, which fails with
+    # "operator does not exist: character varying = taskstatus" on every
+    # insert/update - surfacing as a 503 on task creation.
+    status: Mapped[str] = mapped_column(String(50), default=TaskStatus.backlog.value, nullable=False, index=True)
+    priority: Mapped[str] = mapped_column(String(20), default=TaskPriority.medium.value, nullable=False)
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     reporter_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     story_points: Mapped[int | None] = mapped_column(nullable=True)

@@ -1,10 +1,12 @@
 from typing import Optional
 import uuid
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.models.project import Project
-from app.models.task import Task
+from app.models.task import Task, TaskActivity, AIPriorityScore
+from app.models.comment import Comment
 from app.models.team import TeamMember
 from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.core.exceptions import NotFoundError, ForbiddenError, ValidationError
@@ -101,7 +103,32 @@ class ProjectService:
         if not await self._can_manage_project(project.team_id, user_id):
             raise ForbiddenError("Not authorized to delete project")
 
-        await self.db.delete(project)
+        # Delete children explicitly instead of relying on ORM cascade. Cascade
+        # deletion makes SQLAlchemy load every task and its relations first,
+        # which is slow on big boards and fails outright if any of those tables
+        # is missing or shaped differently in an older database.
+        task_ids = select(Task.id).where(Task.project_id == project_id)
+        await self.db.execute(delete(AIPriorityScore).where(AIPriorityScore.task_id.in_(task_ids)))
+        await self.db.execute(delete(TaskActivity).where(TaskActivity.task_id.in_(task_ids)))
+        await self.db.execute(delete(Comment).where(Comment.task_id.in_(task_ids)))
+
+        # "activities" is the pre-refactor table. It may still exist with rows
+        # from older deployments; a savepoint keeps its absence from aborting
+        # the whole delete.
+        try:
+            async with self.db.begin_nested():
+                await self.db.execute(
+                    text(
+                        "DELETE FROM activities WHERE task_id IN "
+                        "(SELECT id FROM tasks WHERE project_id = :project_id)"
+                    ),
+                    {"project_id": project_id},
+                )
+        except SQLAlchemyError:
+            pass
+
+        await self.db.execute(delete(Task).where(Task.project_id == project_id))
+        await self.db.execute(delete(Project).where(Project.id == project_id))
         await self.db.commit()
         return True
 

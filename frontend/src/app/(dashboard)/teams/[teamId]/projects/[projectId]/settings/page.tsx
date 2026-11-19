@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { ArrowLeft, Trash2 } from 'lucide-react'
+import { apiErrorMessage } from '@/lib/utils'
 
 export default function ProjectSettingsPage() {
   const params = useParams()
@@ -43,7 +44,7 @@ export default function ProjectSettingsPage() {
       setError(null)
       setTimeout(() => setSaved(false), 2500)
     },
-    onError: () => setError('Could not save the project. Try again.'),
+    onError: (error) => setError(apiErrorMessage(error, 'Could not save the project. Try again.')),
   })
 
   const deleteMutation = useMutation({
@@ -52,7 +53,7 @@ export default function ProjectSettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['projects', teamId] })
       router.push(`/teams/${teamId}`)
     },
-    onError: () => setError('Could not delete the project. Try again.'),
+    onError: (error) => setError(apiErrorMessage(error, 'Could not delete the project. Try again.')),
   })
 
   const handleDelete = () => {
