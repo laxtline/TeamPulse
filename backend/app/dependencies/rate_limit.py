@@ -34,10 +34,14 @@ async def rate_limit_dependency(
     request: Request,
     max_requests: int = 100,
     window_seconds: int = 60,
-    key_prefix: str = "api"
+    key_prefix: str = "api",
+    key: str | None = None,
 ):
     client_ip = request.client.host if request.client else "unknown"
-    key = f"{key_prefix}:{client_ip}"
+    # Most limits are per caller address, but login is keyed per account instead:
+    # inside Docker every browser reaches the API from the same gateway address,
+    # so an IP key would lock out the whole team after a few sign-ins.
+    key = key or f"{key_prefix}:{client_ip}"
 
     redis = await get_redis()
     try:

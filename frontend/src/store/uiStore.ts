@@ -2,11 +2,15 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 interface UIState {
+  // Desktop: collapse the sidebar down to icons. Mobile: whether the drawer is
+  // open. They are separate so resizing the window doesn't leave the drawer
+  // hanging open.
   sidebarOpen: boolean
   toggleSidebar: () => void
   setSidebarOpen: (open: boolean) => void
-  theme: 'light' | 'dark' | 'system'
-  setTheme: (theme: 'light' | 'dark' | 'system') => void
+  mobileSidebarOpen: boolean
+  toggleMobileSidebar: () => void
+  setMobileSidebarOpen: (open: boolean) => void
   toasts: Toast[]
   addToast: (toast: Omit<Toast, 'id'>) => void
   removeToast: (id: string) => void
@@ -25,20 +29,9 @@ export const useUIStore = create<UIState>()(
       sidebarOpen: true,
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setSidebarOpen: (open: boolean) => set({ sidebarOpen: open }),
-      theme: 'system',
-      setTheme: (theme: 'light' | 'dark' | 'system') => {
-        set({ theme })
-        if (typeof window !== 'undefined') {
-          const root = window.document.documentElement
-          root.classList.remove('light', 'dark')
-          if (theme === 'system') {
-            const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-            root.classList.add(systemTheme)
-          } else {
-            root.classList.add(theme)
-          }
-        }
-      },
+      mobileSidebarOpen: false,
+      toggleMobileSidebar: () => set((state) => ({ mobileSidebarOpen: !state.mobileSidebarOpen })),
+      setMobileSidebarOpen: (open: boolean) => set({ mobileSidebarOpen: open }),
       toasts: [],
       addToast: (toast) => {
         const id = Math.random().toString(36).slice(2)
@@ -52,7 +45,9 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: 'ui-store',
-      partialize: (state) => ({ theme: state.theme, sidebarOpen: state.sidebarOpen }),
+      // Theme lives in next-themes, not here. Persisting it twice used to make
+      // the toggle and the Appearance tab disagree on which theme was active.
+      partialize: (state) => ({ sidebarOpen: state.sidebarOpen }),
     }
   )
 )

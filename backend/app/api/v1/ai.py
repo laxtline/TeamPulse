@@ -111,9 +111,6 @@ async def get_my_standup(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    from app.models.comment import Activity
-    from sqlalchemy import select
-
     activity_service = ActivityService(db)
     activities = await activity_service.get_user_activities(current_user.id, limit=50)
 

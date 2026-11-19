@@ -57,26 +57,57 @@ async function fetchBackend(
   throw lastError instanceof Error ? lastError : new Error('Backend unreachable')
 }
 
+/**
+ * The backend revokes the old refresh token as soon as it hands out a new one,
+ * so two session reads that refresh at the same moment would make the second
+ * one fail and quietly sign the user out. Share a single request per token.
+ */
+const refreshesInFlight = new Map<string, Promise<JWT>>()
+
 async function refreshAccessToken(token: JWT): Promise<JWT> {
-  try {
-    const response = await fetch(`${API_URL}/api/v1/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: token.refreshToken }),
-    })
+  const key = typeof token.refreshToken === 'string' ? token.refreshToken : ''
+  if (!key) return { ...token, error: 'RefreshAccessTokenError' }
 
-    if (!response.ok) throw new Error('Refresh failed')
+  const running = refreshesInFlight.get(key)
+  if (running) return running
 
-    const data = await response.json()
-    return {
-      ...token,
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      error: undefined,
+  const request = (async (): Promise<JWT> => {
+    try {
+      const response = await fetchBackend('/api/v1/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: token.refreshToken }),
+      }, 1, 10_000)
+
+      if (!response.ok) {
+        // A 429 or a backend hiccup says nothing about the user's session.
+        // Remember the attempt so the next session read waits instead of
+        // hammering the endpoint into a permanent rate limit.
+        const transient = response.status === 429 || response.status >= 500
+        return {
+          ...token,
+          refreshFailedAt: Date.now(),
+          error: transient ? token.error : 'RefreshAccessTokenError',
+        }
+      }
+
+      const data = await response.json()
+      return {
+        ...token,
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        refreshFailedAt: undefined,
+        error: undefined,
+      }
+    } catch {
+      return { ...token, refreshFailedAt: Date.now() }
+    } finally {
+      refreshesInFlight.delete(key)
     }
-  } catch (error) {
-    return { ...token, error: 'RefreshAccessTokenError' }
-  }
+  })()
+
+  refreshesInFlight.set(key, request)
+  return request
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -102,10 +133,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!response || !response.ok) return null
 
         const data = await response.json()
+
+        // Pull the profile so the navbar shows the real name/avatar instead of
+        // the email address.
+        let profile: { full_name?: string; avatar_url?: string | null } = {}
+        try {
+          const meResponse = await fetchBackend('/api/v1/auth/me', {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${data.access_token}` },
+          })
+          if (meResponse.ok) {
+            const me = await meResponse.json()
+            profile = me.user ?? {}
+          }
+        } catch {
+          // Keep the login working even if this extra call fails.
+        }
+
         return {
           id: userIdFromAccessToken(data.access_token) || email,
           email,
-          name: email,
+          name: profile.full_name || email,
+          image: profile.avatar_url || undefined,
+          full_name: profile.full_name || email,
+          avatar_url: profile.avatar_url || null,
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
         }
@@ -121,11 +172,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger, session }) {
       if (user) {
         token.accessToken = user.accessToken
         token.refreshToken = user.refreshToken
         token.id = user.id
+        token.full_name = user.full_name || user.name || token.name
+        token.avatar_url = user.avatar_url ?? user.image ?? null
+        token.name = token.full_name as string
+        token.picture = token.avatar_url as string | null
+      }
+
+      // useSession().update({ full_name, avatar_url }) after a profile edit.
+      if (trigger === 'update' && session) {
+        if (typeof session.full_name === 'string' && session.full_name.trim()) {
+          token.full_name = session.full_name
+          token.name = session.full_name
+        }
+        if (session.avatar_url !== undefined) {
+          token.avatar_url = session.avatar_url || null
+          token.picture = session.avatar_url || null
+        }
       }
 
       if (account?.provider === 'google' || account?.provider === 'github') {
@@ -162,8 +229,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       // Access tokens live for 15 minutes, so grab a new one before it expires.
+      // If the last attempt failed, wait a few seconds first: retrying on every
+      // session read is how the endpoint used to end up rate limited forever.
       const expiresAt = accessTokenExpiresAt(token.accessToken as string | undefined)
-      if (expiresAt && Date.now() > expiresAt - 60_000) {
+      const lastAttempt = typeof token.refreshFailedAt === 'number' ? token.refreshFailedAt : 0
+      const backingOff = Date.now() - lastAttempt < 5_000
+      if (expiresAt && Date.now() > expiresAt - 60_000 && !backingOff) {
         return refreshAccessToken(token)
       }
 
@@ -173,6 +244,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.accessToken = token.accessToken as string
       session.refreshToken = token.refreshToken as string
       session.user.id = token.id as string
+      session.user.full_name = (token.full_name as string | undefined) ?? session.user.name ?? null
+      session.user.avatar_url = (token.avatar_url as string | null | undefined) ?? null
+      session.user.name = session.user.full_name
+      session.user.image = session.user.avatar_url
       // Surfaced so the UI can explain a failed backend handshake instead of
       // showing empty pages after an otherwise successful OAuth login.
       session.error = token.error as string | undefined

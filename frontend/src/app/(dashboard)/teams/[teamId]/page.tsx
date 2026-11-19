@@ -114,7 +114,7 @@ export default function TeamDetailPage() {
         }
       />
 
-      <Tabs defaultValue="overview" onValueChange={(v) => {}}>
+      <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="projects">Projects</TabsTrigger>
@@ -164,7 +164,11 @@ export default function TeamDetailPage() {
                 ) : (
                   <div className="space-y-3">
                     {team.projects?.slice(0, 5).map((project) => (
-                      <div key={project.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-800/50 transition-colors">
+                      <Link
+                        key={project.id}
+                        href={`/teams/${team.id}/projects/${project.id}`}
+                        className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-800/50 transition-colors"
+                      >
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
                             <FolderKanban className="h-5 w-5 text-primary-600 dark:text-primary-400" />
@@ -175,7 +179,7 @@ export default function TeamDetailPage() {
                           </div>
                         </div>
                         <Badge variant="secondary">{project.task_count || 0} tasks</Badge>
-                      </div>
+                      </Link>
                     ))}
                   </div>
                 )}

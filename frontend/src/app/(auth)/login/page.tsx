@@ -7,7 +7,7 @@ import { z } from 'zod'
 import Link from 'next/link'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { authApi } from '@/lib/api'
+import { clearTokenCache } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
@@ -42,10 +42,9 @@ function LoginForm() {
     setIsLoading(true)
     setFormError(null)
     try {
-      // NextAuth's authorize() runs server-side, so the backend's httpOnly
-      // access/refresh cookies must be established by the browser itself.
-      await authApi.login({ email: data.email, password: data.password })
-
+      // NextAuth's authorize() already calls the API. Calling authApi.login
+      // first too meant every attempt used two of the five allowed login
+      // requests, so retrying a typo hit the rate limit almost immediately.
       const result = await signIn('credentials', {
         email: data.email,
         password: data.password,
@@ -56,11 +55,12 @@ function LoginForm() {
       if (result?.error) {
         setFormError('Invalid email or password')
       } else {
+        clearTokenCache()
         router.push(callbackUrl)
         router.refresh()
       }
     } catch (error) {
-      setFormError('Invalid email or password')
+      setFormError('Could not sign in right now. Please try again.')
     } finally {
       setIsLoading(false)
     }

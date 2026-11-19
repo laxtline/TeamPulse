@@ -42,7 +42,7 @@ export function Dropdown({ trigger, items, align = 'right' }: DropdownProps) {
         {isOpen && (
           <div
             className={cn(
-              'fixed z-50 mt-2 w-48 origin-top-right rounded-md bg-white dark:bg-surface-900 border border-border shadow-lg animate-slide-down',
+              'absolute z-50 mt-2 w-48 origin-top-right overflow-hidden rounded-md border border-border bg-card py-1 shadow-lg animate-slide-down',
               align === 'right' ? 'right-0' : 'left-0'
             )}
             role="menu"

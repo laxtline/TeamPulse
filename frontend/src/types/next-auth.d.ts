@@ -28,5 +28,7 @@ declare module 'next-auth/jwt' {
     accessToken?: string
     refreshToken?: string
     error?: string
+    full_name?: string | null
+    avatar_url?: string | null
   }
 }

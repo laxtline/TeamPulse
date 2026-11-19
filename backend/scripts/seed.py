@@ -1,13 +1,20 @@
 import asyncio
+import sys
 import uuid
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
+
+# `python scripts/seed.py` puts scripts/ on sys.path, not the project root, so
+# the `app` imports below would fail. Add the root explicitly.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import init_db, async_session_maker
 from app.models.user import User
 from app.models.team import Team, TeamMember
 from app.models.project import Project
-from app.models.task import Task
+from app.models.task import Task, TaskActivity
 from app.models.comment import Comment
 from app.core.security import get_password_hash
 
@@ -180,6 +187,23 @@ async def seed():
                     **t_data
                 )
                 db.add(task)
+
+        # A little recent activity so the AI standup has something to read.
+        # Real usage fills this in from the board; the demo needs a head start.
+        has_activity = await db.execute(select(TaskActivity.id).limit(1))
+        if not has_activity.scalar_one_or_none():
+            recent = await db.execute(select(Task).order_by(Task.created_at).limit(6))
+            now = datetime.now(timezone.utc)
+            actions = ["moved", "completed", "updated", "moved", "created", "completed"]
+            for i, task in enumerate(recent.scalars()):
+                db.add(TaskActivity(
+                    task_id=task.id,
+                    user_id=task.assignee_id or arjun.id,
+                    action=actions[i],
+                    old_value={"title": task.title, "status": "todo"},
+                    new_value={"title": task.title, "status": task.status},
+                    created_at=now - timedelta(hours=i + 1),
+                ))
 
         await db.commit()
         print("Seed data created successfully!")

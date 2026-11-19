@@ -24,14 +24,58 @@ export const api = axios.create({
 
 // OAuth logins hold their tokens in the NextAuth session, so every request
 // carries a Bearer header. Cached briefly to avoid a session fetch per call.
-let tokenCache: { value: string | null; at: number } = { value: null, at: 0 }
+let tokenCache: { value: string | null; refresh: string | null; at: number } = {
+  value: null,
+  refresh: null,
+  at: 0,
+}
+
+/** Call after sign-in/sign-out so the next request doesn't reuse a stale token. */
+export function clearTokenCache() {
+  tokenCache = { value: null, refresh: null, at: 0 }
+}
+
+// A page load fires several requests at once. If the access token is stale they
+// all get a 401 together, so share one session fetch between them. NextAuth
+// owns refresh-token rotation; calling the backend directly here would rotate
+// the token behind its back and leave NextAuth holding a revoked copy.
+let refreshInFlight: Promise<string | null> | null = null
+
+async function refreshAccessToken(previousToken?: string): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      clearTokenCache()
+      const session = await getSession().catch(() => null)
+      const accessToken = session?.accessToken ?? null
+
+      tokenCache = {
+        value: accessToken,
+        refresh: session?.refreshToken ?? null,
+        at: Date.now(),
+      }
+
+      // Same token back means NextAuth could not refresh (rate limit, backend
+      // down, revoked session). Don't retry with it.
+      if (!accessToken || accessToken === previousToken) return null
+      return accessToken
+    })().finally(() => {
+      refreshInFlight = null
+    })
+  }
+
+  return refreshInFlight
+}
 
 api.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
     if (!config.headers.Authorization) {
       if (Date.now() - tokenCache.at > 5000) {
         const session = await getSession().catch(() => null)
-        tokenCache = { value: session?.accessToken ?? null, at: Date.now() }
+        tokenCache = {
+          value: session?.accessToken ?? null,
+          refresh: session?.refreshToken ?? null,
+          at: Date.now(),
+        }
       }
       if (tokenCache.value) {
         config.headers.Authorization = `Bearer ${tokenCache.value}`
@@ -48,24 +92,40 @@ api.interceptors.response.use(
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
 
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+      // Logging out must never trigger a refresh: if it did, a failed refresh
+      // would redirect while the NextAuth cookie stayed alive.
+      const headers = originalRequest.headers as any
+      const skipRefresh =
+        headers?.get?.('x-skip-auth-refresh') ||
+        headers?.['x-skip-auth-refresh'] ||
+        headers?.['X-Skip-Auth-Refresh']
+      if (skipRefresh) {
+        return Promise.reject(error)
+      }
       originalRequest._retry = true
 
-      try {
-        await axios.post(
-          `${API_URL}/api/v1/auth/refresh`,
-          {},
-          { withCredentials: true }
-        )
+      const previous = headers?.Authorization ?? headers?.get?.('Authorization')
+      const previousToken =
+        typeof previous === 'string' ? previous.replace(/^Bearer\s+/i, '') : undefined
+
+      const accessToken = await refreshAccessToken(previousToken)
+      if (accessToken) {
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`
         return api(originalRequest)
-      } catch {
-        // Only bounce to the login page if the user was somewhere private.
-        if (
-          typeof window !== 'undefined' &&
-          !window.location.pathname.startsWith('/login') &&
-          !window.location.pathname.startsWith('/register')
-        ) {
-          window.location.href = '/login'
-        }
+      }
+
+      // No replacement token means NextAuth could not refresh (rate limit,
+      // backend down, revoked token). Bouncing to /login here is what made a
+      // transient 429 feel like a random logout, so only leave when the
+      // session itself is gone.
+      const session = await getSession().catch(() => null)
+      if (
+        !session &&
+        typeof window !== 'undefined' &&
+        !window.location.pathname.startsWith('/login') &&
+        !window.location.pathname.startsWith('/register')
+      ) {
+        window.location.href = '/login'
       }
     }
 
@@ -89,6 +149,7 @@ export interface TokenPair {
 export interface CurrentUserResponse {
   user: User
   teams: Team[]
+  oauth_providers: string[]
 }
 
 export const authApi = {
@@ -96,10 +157,14 @@ export const authApi = {
     payload<TokenPair>(api.post('/auth/register', data)),
   login: (data: { email: string; password: string }) =>
     payload<TokenPair>(api.post('/auth/login', data)),
-  logout: () => payload<{ message: string }>(api.post('/auth/logout')),
+  logout: () =>
+    payload<{ message: string }>(
+      api.post('/auth/logout', {}, { headers: { 'X-Skip-Auth-Refresh': 'true' } })
+    ),
   me: () => payload<CurrentUserResponse>(api.get('/auth/me')),
   refresh: () => payload<TokenPair>(api.post('/auth/refresh')),
-  updateProfile: (data: { full_name: string; avatar_url?: string }) => payload<User>(api.patch('/auth/me', data)),
+  updateProfile: (data: { full_name?: string; avatar_url?: string; bio?: string; theme?: string }) =>
+    payload<User>(api.patch('/auth/me', data)),
   changePassword: (data: { current_password: string; new_password: string }) =>
     payload<{ message: string }>(api.post('/auth/change-password', data)),
   forgotPassword: (data: { email: string }) =>

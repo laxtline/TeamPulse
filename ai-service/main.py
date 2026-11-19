@@ -82,8 +82,9 @@ PRIORITIES:
 
         return StandupSummaryResponse(summary=summary, priorities=priorities[:3])
 
-    except Exception:
+    except Exception as exc:
         # Fallback
+        print(f"Groq standup summary failed: {exc}")
         completed = sum(1 for a in request.activities if a.get("action") == "completed")
         moved = sum(1 for a in request.activities if a.get("action") == "moved")
 
@@ -139,7 +140,8 @@ no bullet points, no markdown."""
         )
         content = (response.choices[0].message.content or "").strip()
         return ProjectSummaryResponse(summary=content or fallback)
-    except Exception:
+    except Exception as exc:
+        print(f"Groq project summary failed: {exc}")
         return ProjectSummaryResponse(summary=fallback)
 
 
@@ -206,8 +208,9 @@ ACTION: <Do now | Schedule this week | Delegate | Defer>"""
 
         return TaskPriorityResponse(score=score, reasoning=reasoning, suggested_action=action)
 
-    except Exception:
+    except Exception as exc:
         # Fallback heuristic
+        print(f"Groq task priority failed: {exc}")
         score = 5
         if request.due_date:
             from datetime import datetime, timezone

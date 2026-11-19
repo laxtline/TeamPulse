@@ -16,8 +16,12 @@ class LoginRequest(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
-    full_name: str = Field(min_length=1, max_length=255)
+    # Optional so the appearance tab can save just the theme without resending
+    # the whole profile.
+    full_name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     avatar_url: Optional[str] = None
+    bio: Optional[str] = Field(default=None, max_length=1000)
+    theme: Optional[str] = Field(default=None, pattern="^(light|dark|system)$")
 
 
 class ChangePasswordRequest(BaseModel):
@@ -50,6 +54,8 @@ class UserResponse(BaseModel):
     email: str
     full_name: str
     avatar_url: Optional[str]
+    bio: Optional[str]
+    theme: str = "system"
     role: str
     is_active: bool
     email_verified: bool
@@ -62,6 +68,7 @@ class UserResponse(BaseModel):
 class MeResponse(BaseModel):
     user: UserResponse
     teams: list["TeamBrief"] = []
+    oauth_providers: list[str] = []
 
 
 class TeamBrief(BaseModel):

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cn, formatRelativeTime, getStatusColor, getPriorityColor, getRoleColor } from './utils'
+import { cn, formatRelativeTime, getStatusColor, getPriorityColor, getRoleColor, getInitials, md5 } from './utils'
 
 describe('cn utility', () => {
   it('should join class names', () => {
@@ -67,5 +67,23 @@ describe('getRoleColor', () => {
     expect(getRoleColor('admin')).toBe('bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400')
     expect(getRoleColor('member')).toBe('bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400')
     expect(getRoleColor('viewer')).toBe('bg-surface-100 text-surface-800 dark:bg-surface-800 dark:text-surface-300')
+  })
+})
+
+describe('getInitials', () => {
+  it('uses the first and last name', () => {
+    expect(getInitials('Arjun Sharma')).toBe('AS')
+  })
+
+  it('falls back to the first two letters of a single name', () => {
+    expect(getInitials('Priya')).toBe('PR')
+  })
+})
+
+describe('md5', () => {
+  it('matches the reference hashes used for Gravatar', () => {
+    expect(md5('test@example.com')).toBe('55502f40dc8b7c769880b10874abc9d0')
+    expect(md5('arjun@teampulse.ac')).toBe('7aa53da1190d984da73c98fda43ab3d5')
+    expect(md5('')).toBe('d41d8cd98f00b204e9800998ecf8427e')
   })
 })

@@ -19,7 +19,7 @@ from app.schemas.auth import (
 )
 from app.services.auth import AuthService
 from app.dependencies.auth import get_current_user, get_db
-from app.dependencies.rate_limit import rate_limit
+from app.dependencies.rate_limit import rate_limit, rate_limit_dependency
 
 settings = get_settings()
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -62,9 +62,14 @@ async def register(data: RegisterRequest, response: Response, db: AsyncSession =
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 
-@router.post("/login", response_model=TokenResponse,
-             dependencies=[rate_limit(max_requests=5, window_seconds=300, key_prefix="auth:login")])
-async def login(data: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
+@router.post("/login", response_model=TokenResponse)
+async def login(data: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    # Keyed on the email, not the IP: two calls happen per sign-in (the browser
+    # sets cookies, then NextAuth re-checks server-side) and they both look like
+    # the same address once we're behind Docker or a reverse proxy.
+    await rate_limit_dependency(
+        request, max_requests=10, window_seconds=300, key=f"auth:login:{data.email.lower()}"
+    )
     auth_service = AuthService(db)
     user, access_token, refresh_token = await auth_service.login(data)
     set_auth_cookies(response, access_token, refresh_token)
@@ -72,7 +77,7 @@ async def login(data: LoginRequest, response: Response, db: AsyncSession = Depen
 
 
 @router.post("/refresh", response_model=TokenResponse,
-             dependencies=[rate_limit(max_requests=10, window_seconds=60, key_prefix="auth:refresh")])
+             dependencies=[rate_limit(max_requests=30, window_seconds=60, key_prefix="auth:refresh")])
 async def refresh_token(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     refresh_token = request.cookies.get("refresh_token")
     if not refresh_token:
@@ -104,6 +109,7 @@ async def logout(request: Request, response: Response, db: AsyncSession = Depend
 @router.get("/me", response_model=MeResponse)
 async def get_me(current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     from app.models.team import TeamMember
+    from app.models.user import OAuthAccount
     from sqlalchemy import select
     from app.schemas.auth import TeamBrief
 
@@ -124,9 +130,15 @@ async def get_me(current_user=Depends(get_current_user), db: AsyncSession = Depe
             role=member.role
         ))
 
+    oauth_result = await db.execute(
+        select(OAuthAccount.provider).where(OAuthAccount.user_id == current_user.id)
+    )
+    providers = sorted(set(oauth_result.scalars().all()))
+
     return MeResponse(
         user=UserResponse.model_validate(user),
-        teams=teams
+        teams=teams,
+        oauth_providers=providers,
     )
 
 
@@ -136,9 +148,18 @@ async def update_profile(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    current_user.full_name = data.full_name
+    if data.full_name is not None:
+        current_user.full_name = data.full_name.strip()
+    # An empty string from the form means "remove my custom avatar" so the UI
+    # falls back to Gravatar/initials; None means "leave it alone".
     if data.avatar_url is not None:
-        current_user.avatar_url = data.avatar_url
+        cleaned = data.avatar_url.strip()
+        current_user.avatar_url = cleaned or None
+    if data.bio is not None:
+        current_user.bio = data.bio.strip() or None
+    if data.theme is not None:
+        current_user.theme = data.theme
+
     await db.commit()
     await db.refresh(current_user)
     return UserResponse.model_validate(current_user)

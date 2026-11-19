@@ -3,6 +3,8 @@ export interface User {
   email: string
   full_name: string
   avatar_url: string | null
+  bio?: string | null
+  theme?: 'light' | 'dark' | 'system'
   role: string
   is_active: boolean
   email_verified: boolean

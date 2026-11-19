@@ -1,8 +1,10 @@
 'use client'
 
+import { Suspense, useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
-import { useState, useEffect } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'next/navigation'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTheme } from 'next-themes'
 import { authApi, notificationsApi } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
@@ -10,15 +12,25 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { Avatar } from '@/components/ui/Avatar'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { Textarea } from '@/components/ui/Textarea'
-import { Loader2, User, Shield, Bell, Key, Palette, Globe, Moon, Sun, Save, CheckCircle2, MessageSquare, Calendar } from 'lucide-react'
-import { Toaster } from '@/components/ui/Toaster'
-import { toast } from 'sonner'
+import {
+  Loader2,
+  User,
+  Shield,
+  Bell,
+  Key,
+  Palette,
+  Globe,
+  Moon,
+  Sun,
+  Monitor,
+  Save,
+  MessageSquare,
+  Calendar,
+} from 'lucide-react'
+import { useUIStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
-import { useTheme } from 'next-themes'
 
-// Notification preferences type (matches backend schema)
 interface NotificationPreferences {
   email_enabled: boolean
   push_enabled: boolean
@@ -31,7 +43,7 @@ interface NotificationPreferences {
 
 const defaultNotifications: NotificationPreferences = {
   email_enabled: true,
-  push_enabled: true,
+  push_enabled: false,
   task_assigned: true,
   task_updated: true,
   comments: true,
@@ -39,137 +51,222 @@ const defaultNotifications: NotificationPreferences = {
   weekly_digest: false,
 }
 
-export default function SettingsPage() {
-  const { data: session } = useSession()
+const tabs = [
+  { id: 'profile', label: 'Profile', icon: User },
+  { id: 'security', label: 'Security', icon: Shield },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'appearance', label: 'Appearance', icon: Palette },
+] as const
+
+type TabId = (typeof tabs)[number]['id']
+
+function SettingsContent() {
+  const { data: session, update: updateSession } = useSession()
+  const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const { theme, setTheme } = useTheme()
-  const [activeTab, setActiveTab] = useState('profile')
-  const [isSaving, setIsSaving] = useState(false)
+  const addToast = useUIStore((state) => state.addToast)
 
-  // Profile form state
-  const [profile, setProfile] = useState({
-    full_name: session?.user?.full_name || '',
-    email: session?.user?.email || '',
-    bio: '',
-    avatar_url: session?.user?.avatar_url || '',
+  const [activeTab, setActiveTab] = useState<TabId>('profile')
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+
+  // Keep the deep-linked tab in sync (/settings?tab=security). The navbar links
+  // here, and without this the page always opened on Profile.
+  useEffect(() => {
+    const requested = searchParams.get('tab')
+    if (requested && tabs.some((tab) => tab.id === requested)) {
+      setActiveTab(requested as TabId)
+    }
+  }, [searchParams])
+
+  // GET /auth/me is the source of truth. The NextAuth session only has what the
+  // login callback put there, so bio/avatar would otherwise look empty.
+  const { data: me, isLoading: isLoadingProfile } = useQuery({
+    queryKey: ['me'],
+    queryFn: authApi.me,
   })
 
-  // Password form state
-  const [password, setPassword] = useState({
+  const [profile, setProfile] = useState({
+    full_name: '',
+    email: '',
+    bio: '',
+    avatar_url: '',
+  })
+
+  useEffect(() => {
+    if (!me?.user) return
+    setProfile({
+      full_name: me.user.full_name || '',
+      email: me.user.email || '',
+      bio: me.user.bio || '',
+      avatar_url: me.user.avatar_url || '',
+    })
+  }, [me])
+
+  const [passwords, setPasswords] = useState({
     current_password: '',
     new_password: '',
     confirm_password: '',
   })
 
-  // Notification preferences
   const [notifications, setNotifications] = useState<NotificationPreferences>(defaultNotifications)
   const [notificationsLoaded, setNotificationsLoaded] = useState(false)
+  const [isSavingNotifications, setIsSavingNotifications] = useState(false)
 
-  // Load notification preferences from backend on mount
   useEffect(() => {
-    notificationsApi.getPreferences()
+    notificationsApi
+      .getPreferences()
       .then((data) => {
-        setNotifications(data)
-        setNotificationsLoaded(true)
+        const { user_id: _userId, ...prefs } = data
+        setNotifications({ ...defaultNotifications, ...prefs })
       })
       .catch(() => {
-        // Fallback to localStorage
+        // Offline/dev fallback so the form isn't stuck on a spinner.
         const stored = localStorage.getItem('teampulse:notifications')
         if (stored) {
           try {
-            setNotifications(JSON.parse(stored))
+            setNotifications({ ...defaultNotifications, ...JSON.parse(stored) })
           } catch {
-            // Use defaults
+            // use defaults
           }
         }
-        setNotificationsLoaded(true)
       })
+      .finally(() => setNotificationsLoaded(true))
   }, [])
 
   const updateProfileMutation = useMutation({
     mutationFn: authApi.updateProfile,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user'] })
-      toast.success('Profile updated successfully')
+    onSuccess: async (user) => {
+      queryClient.setQueryData(['me'], (current: typeof me) =>
+        current ? { ...current, user: { ...current.user, ...user } } : current
+      )
+      // Push the new name/avatar into the JWT so the navbar updates without a
+      // full reload.
+      await updateSession({
+        full_name: user.full_name,
+        avatar_url: user.avatar_url,
+        bio: user.bio,
+      })
+      addToast({ type: 'success', message: 'Profile updated' })
     },
-    onError: () => {
-      toast.error('Failed to update profile')
+    onError: (error: any) => {
+      addToast({
+        type: 'error',
+        message: error?.response?.data?.detail || 'Could not update your profile',
+      })
     },
   })
 
   const changePasswordMutation = useMutation({
     mutationFn: authApi.changePassword,
     onSuccess: () => {
-      setPassword({ current_password: '', new_password: '', confirm_password: '' })
-      toast.success('Password changed successfully')
+      setPasswords({ current_password: '', new_password: '', confirm_password: '' })
+      addToast({ type: 'success', message: 'Password changed' })
     },
     onError: (error: any) => {
-      toast.error(error?.response?.data?.detail || 'Failed to change password')
+      addToast({
+        type: 'error',
+        message: error?.response?.data?.detail || 'Could not change your password',
+      })
     },
   })
 
-  const handleProfileSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSaving(true)
-    await updateProfileMutation.mutateAsync({
-      full_name: profile.full_name,
-      avatar_url: profile.avatar_url || undefined,
-    })
-    setIsSaving(false)
+  const themeMutation = useMutation({
+    mutationFn: authApi.updateProfile,
+    onError: () => {
+      addToast({ type: 'error', message: 'Could not save your theme preference' })
+    },
+  })
+
+  const handleThemeChange = (next: 'light' | 'dark' | 'system') => {
+    // Apply instantly, then persist. Waiting on the network would leave the
+    // page in the old theme for a beat.
+    setTheme(next)
+    queryClient.setQueryData(['me'], (current: typeof me) =>
+      current ? { ...current, user: { ...current.user, theme: next } } : current
+    )
+    themeMutation.mutate({ theme: next })
   }
 
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (password.new_password !== password.confirm_password) {
-      toast.error('Passwords do not match')
+  const handleProfileSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!profile.full_name.trim()) {
+      addToast({ type: 'error', message: 'Your name cannot be empty' })
+      return
+    }
+    setIsSavingProfile(true)
+    try {
+      await updateProfileMutation.mutateAsync({
+        full_name: profile.full_name.trim(),
+        bio: profile.bio,
+        // Send "" instead of undefined so clearing the field actually removes
+        // the avatar and we fall back to Gravatar/initials.
+        avatar_url: profile.avatar_url.trim(),
+      })
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
+  const handlePasswordSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (passwords.new_password.length < 8) {
+      addToast({ type: 'error', message: 'New password must be at least 8 characters' })
+      return
+    }
+    if (passwords.new_password !== passwords.confirm_password) {
+      addToast({ type: 'error', message: 'Passwords do not match' })
       return
     }
     await changePasswordMutation.mutateAsync({
-      current_password: password.current_password,
-      new_password: password.new_password,
+      current_password: passwords.current_password,
+      new_password: passwords.new_password,
     })
   }
 
-  const handleNotificationsSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleNotificationsSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setIsSavingNotifications(true)
     try {
-      await notificationsApi.updatePreferences(notifications)
-      localStorage.setItem('teampulse:notifications', JSON.stringify(notifications))
-      toast.success('Notification preferences saved')
-    } catch {
-      // Fallback to localStorage
-      localStorage.setItem('teampulse:notifications', JSON.stringify(notifications))
-      toast.success('Notification preferences saved locally')
+      const saved = await notificationsApi.updatePreferences(notifications)
+      const { user_id: _userId, ...prefs } = saved
+      setNotifications({ ...defaultNotifications, ...prefs })
+      localStorage.setItem('teampulse:notifications', JSON.stringify(prefs))
+      addToast({ type: 'success', message: 'Notification preferences saved' })
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        message: error?.response?.data?.detail || 'Could not save notification preferences',
+      })
+    } finally {
+      setIsSavingNotifications(false)
     }
   }
 
+  const connectedAccounts = new Set(me?.oauth_providers ?? [])
+
   return (
-    <div className="p-6 space-y-6">
-      <Toaster />
+    <div className="space-y-6 p-4 sm:p-6">
       <PageHeader
         title="Settings"
         description="Manage your account, preferences, and security settings"
       />
 
-      <div className="flex gap-6">
-        {/* Sidebar Navigation */}
-        <div className="w-48 flex-shrink-0">
-          <nav className="space-y-1">
-            {[
-              { id: 'profile', label: 'Profile', icon: User },
-              { id: 'security', label: 'Security', icon: Shield },
-              { id: 'notifications', label: 'Notifications', icon: Bell },
-              { id: 'appearance', label: 'Appearance', icon: Palette },
-            ].map((tab) => (
+      <div className="flex flex-col gap-6 md:flex-row">
+        {/* Section nav: horizontal on small screens so it doesn't squeeze the form */}
+        <div className="md:w-48 md:flex-shrink-0">
+          <nav className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible" aria-label="Settings sections">
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                  'flex shrink-0 items-center gap-3 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                   activeTab === tab.id
-                    ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
-                    : 'text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800'
+                    ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400'
+                    : 'text-surface-600 hover:bg-surface-100 dark:text-surface-400 dark:hover:bg-surface-800'
                 )}
+                aria-current={activeTab === tab.id ? 'page' : undefined}
               >
                 <tab.icon className="h-4 w-4" />
                 {tab.label}
@@ -178,9 +275,7 @@ export default function SettingsPage() {
           </nav>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 max-w-3xl">
-          {/* Profile Tab */}
+        <div className="min-w-0 flex-1 max-w-3xl">
           {activeTab === 'profile' && (
             <Card>
               <CardHeader>
@@ -188,58 +283,74 @@ export default function SettingsPage() {
                 <CardDescription>Update your personal information</CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handleProfileSubmit} className="space-y-6">
-                  <div className="flex items-center gap-6">
-                    <Avatar src={profile.avatar_url ?? session?.user?.avatar_url} name={profile.full_name ?? session?.user?.full_name ?? undefined} size="xl" />
-                    <div>
-                      <h4 className="font-medium">Profile Picture</h4>
-                      <p className="text-sm text-surface-500">Enter a URL for your avatar image</p>
+                {isLoadingProfile ? (
+                  <div className="flex items-center gap-2 py-8 text-surface-500">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary-600" />
+                    Loading your profile...
+                  </div>
+                ) : (
+                  <form onSubmit={handleProfileSubmit} className="space-y-6">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                      <Avatar
+                        src={profile.avatar_url || null}
+                        name={profile.full_name || session?.user?.full_name || undefined}
+                        email={profile.email || session?.user?.email}
+                        size="xl"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-medium">Profile picture</h4>
+                        <p className="mb-2 text-sm text-surface-500">
+                          Paste an image URL, or leave it empty to use Gravatar / your initials.
+                        </p>
+                        <Input
+                          label="Avatar URL"
+                          value={profile.avatar_url}
+                          onChange={(event) =>
+                            setProfile({ ...profile, avatar_url: event.target.value })
+                          }
+                          placeholder="https://example.com/avatar.png"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
                       <Input
-                        label="Avatar URL"
-                        value={profile.avatar_url}
-                        onChange={(e) => setProfile({ ...profile, avatar_url: e.target.value })}
-                        placeholder="https://example.com/avatar.png"
-                        className="mt-2"
+                        label="Full Name"
+                        value={profile.full_name}
+                        onChange={(event) =>
+                          setProfile({ ...profile, full_name: event.target.value })
+                        }
+                        required
+                      />
+                      <Input label="Email" type="email" value={profile.email} disabled />
+                    </div>
+
+                    <div>
+                      <label htmlFor="bio" className="label mb-1 block">
+                        Bio
+                      </label>
+                      <Textarea
+                        id="bio"
+                        value={profile.bio}
+                        maxLength={1000}
+                        onChange={(event) => setProfile({ ...profile, bio: event.target.value })}
+                        rows={3}
+                        placeholder="Tell us about yourself..."
                       />
                     </div>
-                  </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Input
-                      label="Full Name"
-                      value={profile.full_name}
-                      onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
-                    />
-                    <Input
-                      label="Email"
-                      type="email"
-                      value={profile.email}
-                      disabled
-                    />
-                  </div>
-
-                  <div>
-                    <label className="label">Bio</label>
-                    <Textarea
-                      value={profile.bio}
-                      onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
-                      rows={3}
-                      placeholder="Tell us about yourself..."
-                    />
-                  </div>
-
-                  <div className="flex justify-end pt-4 border-t border-border">
-                    <Button type="submit" loading={isSaving || updateProfileMutation.isPending}>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Changes
-                    </Button>
-                  </div>
-                </form>
+                    <div className="flex justify-end border-t border-border pt-4">
+                      <Button type="submit" loading={isSavingProfile || updateProfileMutation.isPending}>
+                        <Save className="mr-2 h-4 w-4" />
+                        Save Changes
+                      </Button>
+                    </div>
+                  </form>
+                )}
               </CardContent>
             </Card>
           )}
 
-          {/* Security Tab */}
           {activeTab === 'security' && (
             <Card>
               <CardHeader>
@@ -247,73 +358,84 @@ export default function SettingsPage() {
                 <CardDescription>Manage your password and security settings</CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handlePasswordSubmit} className="space-y-6">
-                  <div>
-                    <label className="label">Current Password</label>
-                    <Input
-                      type="password"
-                      value={password.current_password}
-                      onChange={(e) => setPassword({ ...password, current_password: e.target.value })}
-                      placeholder="••••••••"
-                    />
-                  </div>
-                  <div>
-                    <label className="label">New Password</label>
-                    <Input
-                      type="password"
-                      value={password.new_password}
-                      onChange={(e) => setPassword({ ...password, new_password: e.target.value })}
-                      placeholder="••••••••"
-                    />
-                  </div>
-                  <div>
-                    <label className="label">Confirm New Password</label>
-                    <Input
-                      type="password"
-                      value={password.confirm_password}
-                      onChange={(e) => setPassword({ ...password, confirm_password: e.target.value })}
-                      placeholder="••••••••"
-                    />
-                  </div>
+                <form onSubmit={handlePasswordSubmit} className="space-y-5">
+                  <Input
+                    label="Current Password"
+                    type="password"
+                    value={passwords.current_password}
+                    onChange={(event) =>
+                      setPasswords({ ...passwords, current_password: event.target.value })
+                    }
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    required
+                    showToggle
+                  />
+                  <Input
+                    label="New Password"
+                    type="password"
+                    value={passwords.new_password}
+                    onChange={(event) =>
+                      setPasswords({ ...passwords, new_password: event.target.value })
+                    }
+                    placeholder="At least 8 characters"
+                    autoComplete="new-password"
+                    required
+                    showToggle
+                  />
+                  <Input
+                    label="Confirm New Password"
+                    type="password"
+                    value={passwords.confirm_password}
+                    onChange={(event) =>
+                      setPasswords({ ...passwords, confirm_password: event.target.value })
+                    }
+                    placeholder="Repeat the new password"
+                    autoComplete="new-password"
+                    required
+                    showToggle
+                  />
 
-                  <div className="flex justify-end pt-4 border-t border-border">
+                  <div className="flex justify-end border-t border-border pt-4">
                     <Button type="submit" loading={changePasswordMutation.isPending}>
-                      <Key className="h-4 w-4 mr-2" />
+                      <Key className="mr-2 h-4 w-4" />
                       Change Password
                     </Button>
                   </div>
                 </form>
 
                 <div className="mt-8 border-t border-border pt-6">
-                  <h4 className="font-medium mb-4">Connected Accounts</h4>
+                  <h4 className="mb-1 font-medium">Connected Accounts</h4>
+                  <p className="mb-4 text-sm text-surface-500">
+                    Sign-in methods linked to {profile.email || 'this account'}.
+                  </p>
                   <div className="space-y-3">
                     {[
-                      { name: 'Google', connected: true, icon: Globe },
-                      { name: 'GitHub', connected: true, icon: Globe },
-                    ].map((account) => (
-                      <div key={account.name} className="flex items-center justify-between p-3 rounded-lg bg-surface-50 dark:bg-surface-800/50">
-                        <div className="flex items-center gap-3">
-                          <account.icon className="h-5 w-5 text-surface-500" />
-                          <span className="font-medium">{account.name}</span>
+                      { id: 'google', name: 'Google' },
+                      { id: 'github', name: 'GitHub' },
+                    ].map((account) => {
+                      const connected = connectedAccounts.has(account.id)
+                      return (
+                        <div
+                          key={account.id}
+                          className="flex items-center justify-between rounded-lg bg-surface-50 p-3 dark:bg-surface-800/50"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Globe className="h-5 w-5 text-surface-500" />
+                            <span className="font-medium">{account.name}</span>
+                          </div>
+                          <Badge variant={connected ? 'success' : 'secondary'}>
+                            {connected ? 'Connected' : 'Not connected'}
+                          </Badge>
                         </div>
-                        <Badge variant={account.connected ? 'success' : 'secondary'}>
-                          {account.connected ? 'Connected' : 'Connect'}
-                        </Badge>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
-                </div>
-
-                <div className="mt-8 border-t border-border pt-6">
-                  <h4 className="font-medium mb-4 text-red-600">Danger Zone</h4>
-                  <p className="text-sm text-surface-500 mb-4">Deleting your account will permanently remove all your data.</p>
-                  <Button variant="destructive">Delete Account</Button>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Notifications Tab */}
           {activeTab === 'notifications' && (
             <Card>
               <CardHeader>
@@ -328,102 +450,113 @@ export default function SettingsPage() {
                   </div>
                 ) : (
                   <form onSubmit={handleNotificationsSubmit} className="space-y-6">
-                  <div>
-                    <h4 className="font-medium mb-4">Delivery Methods</h4>
-                    <div className="space-y-3">
-                      <label className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-800/50 cursor-pointer">
-                        <div className="flex items-center gap-3">
-                          <Bell className="h-5 w-5 text-surface-500" />
-                          <div>
-                            <p className="font-medium">Email Notifications</p>
-                            <p className="text-sm text-surface-500">Receive notifications via email</p>
-                          </div>
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={notifications.email_enabled}
-                          onChange={(e) => setNotifications({ ...notifications, email_enabled: e.target.checked })}
-                          className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500"
-                        />
-                      </label>
-                      <label className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-800/50 cursor-pointer">
-                        <div className="flex items-center gap-3">
-                          <Bell className="h-5 w-5 text-surface-500" />
-                          <div>
-                            <p className="font-medium">Push Notifications</p>
-                            <p className="text-sm text-surface-500">Receive browser push notifications</p>
-                          </div>
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={notifications.push_enabled}
-                          onChange={(e) => setNotifications({ ...notifications, push_enabled: e.target.checked })}
-                          className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500"
-                        />
-                      </label>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="font-medium mb-4">Activity Notifications</h4>
-                    <div className="space-y-3">
-                      {[
-                        { key: 'task_assigned', label: 'Task Assigned', desc: 'When a task is assigned to you' },
-                        { key: 'task_updated', label: 'Task Updated', desc: 'When a task you follow is updated' },
-                        { key: 'comments', label: 'Comments', desc: 'When someone comments on your tasks' },
-                        { key: 'mentions', label: 'Mentions', desc: 'When you are mentioned in a comment' },
-                      ].map((item) => (
-                        <label key={item.key} className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-800/50 cursor-pointer">
-                          <div className="flex items-center gap-3">
-                            <MessageSquare className="h-5 w-5 text-surface-500" />
-                            <div>
-                              <p className="font-medium">{item.label}</p>
-                              <p className="text-sm text-surface-500">{item.desc}</p>
+                    <div>
+                      <h4 className="mb-4 font-medium">Delivery Methods</h4>
+                      <div className="space-y-3">
+                        {[
+                          {
+                            key: 'email_enabled' as const,
+                            label: 'Email Notifications',
+                            desc: 'Receive notifications via email',
+                          },
+                          {
+                            key: 'push_enabled' as const,
+                            label: 'Push Notifications',
+                            desc: 'Receive browser push notifications',
+                          },
+                        ].map((item) => (
+                          <label
+                            key={item.key}
+                            className="flex cursor-pointer items-center justify-between rounded-lg p-3 hover:bg-surface-50 dark:hover:bg-surface-800/50"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Bell className="h-5 w-5 text-surface-500" />
+                              <div>
+                                <p className="font-medium">{item.label}</p>
+                                <p className="text-sm text-surface-500">{item.desc}</p>
+                              </div>
                             </div>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={notifications[item.key as keyof NotificationPreferences]}
-                            onChange={(e) => setNotifications({ ...notifications, [item.key]: e.target.checked })}
-                            className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500"
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="font-medium mb-4">Digest</h4>
-                    <label className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-800/50 cursor-pointer">
-                      <div className="flex items-center gap-3">
-                        <Calendar className="h-5 w-5 text-surface-500" />
-                        <div>
-                          <p className="font-medium">Weekly Digest</p>
-                          <p className="text-sm text-surface-500">Receive a weekly summary of your team's activity</p>
-                        </div>
+                            <input
+                              type="checkbox"
+                              checked={notifications[item.key]}
+                              onChange={(event) =>
+                                setNotifications({ ...notifications, [item.key]: event.target.checked })
+                              }
+                              className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500"
+                            />
+                          </label>
+                        ))}
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={notifications.weekly_digest}
-                        onChange={(e) => setNotifications({ ...notifications, weekly_digest: e.target.checked })}
-                        className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500"
-                      />
-                    </label>
-                  </div>
+                    </div>
 
-                  <div className="flex justify-end pt-4 border-t border-border">
-                    <Button type="submit">
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Preferences
-                    </Button>
-                  </div>
-                </form>
-              )}
+                    <div>
+                      <h4 className="mb-4 font-medium">Activity Notifications</h4>
+                      <div className="space-y-3">
+                        {[
+                          { key: 'task_assigned' as const, label: 'Task Assigned', desc: 'When a task is assigned to you' },
+                          { key: 'task_updated' as const, label: 'Task Updated', desc: 'When a task you follow is updated' },
+                          { key: 'comments' as const, label: 'Comments', desc: 'When someone comments on your tasks' },
+                          { key: 'mentions' as const, label: 'Mentions', desc: 'When you are mentioned in a comment' },
+                        ].map((item) => (
+                          <label
+                            key={item.key}
+                            className="flex cursor-pointer items-center justify-between rounded-lg p-3 hover:bg-surface-50 dark:hover:bg-surface-800/50"
+                          >
+                            <div className="flex items-center gap-3">
+                              <MessageSquare className="h-5 w-5 text-surface-500" />
+                              <div>
+                                <p className="font-medium">{item.label}</p>
+                                <p className="text-sm text-surface-500">{item.desc}</p>
+                              </div>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={notifications[item.key]}
+                              onChange={(event) =>
+                                setNotifications({ ...notifications, [item.key]: event.target.checked })
+                              }
+                              className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="mb-4 font-medium">Digest</h4>
+                      <label className="flex cursor-pointer items-center justify-between rounded-lg p-3 hover:bg-surface-50 dark:hover:bg-surface-800/50">
+                        <div className="flex items-center gap-3">
+                          <Calendar className="h-5 w-5 text-surface-500" />
+                          <div>
+                            <p className="font-medium">Weekly Digest</p>
+                            <p className="text-sm text-surface-500">
+                              Receive a weekly summary of your team&apos;s activity
+                            </p>
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={notifications.weekly_digest}
+                          onChange={(event) =>
+                            setNotifications({ ...notifications, weekly_digest: event.target.checked })
+                          }
+                          className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex justify-end border-t border-border pt-4">
+                      <Button type="submit" loading={isSavingNotifications}>
+                        <Save className="mr-2 h-4 w-4" />
+                        Save Preferences
+                      </Button>
+                    </div>
+                  </form>
+                )}
               </CardContent>
             </Card>
           )}
 
-          {/* Appearance Tab */}
           {activeTab === 'appearance' && (
             <Card>
               <CardHeader>
@@ -432,52 +565,64 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div>
-                  <h4 className="font-medium mb-4">Theme</h4>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    {[
+                  <h4 className="mb-1 font-medium">Theme</h4>
+                  <p className="mb-4 text-sm text-surface-500">
+                    System follows your operating system setting.
+                  </p>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    {([
                       { value: 'light', label: 'Light', icon: Sun },
                       { value: 'dark', label: 'Dark', icon: Moon },
-                      { value: 'system', label: 'System', icon: Globe },
-                    ].map((option) => (
+                      { value: 'system', label: 'System', icon: Monitor },
+                    ] as const).map((option) => (
                       <button
                         key={option.value}
-                        onClick={() => setTheme(option.value)}
+                        type="button"
+                        onClick={() => handleThemeChange(option.value)}
+                        aria-pressed={theme === option.value}
                         className={cn(
-                          'p-4 rounded-lg border-2 transition-all flex flex-col items-center gap-2',
+                          'flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-all',
                           theme === option.value
                             ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30'
                             : 'border-border hover:border-surface-300 dark:hover:border-surface-600'
                         )}
                       >
-                        <option.icon className={cn('h-6 w-6', theme === option.value ? 'text-primary-600 dark:text-primary-400' : 'text-surface-500')} />
+                        <option.icon
+                          className={cn(
+                            'h-6 w-6',
+                            theme === option.value
+                              ? 'text-primary-600 dark:text-primary-400'
+                              : 'text-surface-500'
+                          )}
+                        />
                         <span className="font-medium">{option.label}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div>
-                  <h4 className="font-medium mb-4">Density</h4>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    {['comfortable', 'compact', 'condensed'].map((density) => (
-                      <button
-                        key={density}
-                        className={cn(
-                          'p-4 rounded-lg border-2 transition-all',
-                          'border-border hover:border-surface-300 dark:hover:border-surface-600'
-                        )}
-                      >
-                        <span className="font-medium capitalize">{density}</span>
-                        <p className="text-sm text-surface-500 mt-1">Coming soon</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <p className="border-t border-border pt-4 text-sm text-surface-500">
+                  Your choice is saved to your account and applies on every device you sign in from.
+                </p>
               </CardContent>
             </Card>
           )}
         </div>
       </div>
     </div>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center p-10">
+          <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
+        </div>
+      }
+    >
+      <SettingsContent />
+    </Suspense>
   )
 }
