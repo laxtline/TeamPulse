@@ -42,7 +42,9 @@ function withDiagnostics(handler: (request: NextRequest) => Promise<Response>) {
 
     const response = await handler(request)
 
-    const error = slot.__teampulseAuthError
+    // Re-read through an explicit cast: assigning `undefined` above narrows the
+    // property, and the narrowed type would not be spreadable below.
+    const error = slot.__teampulseAuthError as Record<string, unknown> | undefined
     if (error) {
       slot.__teampulseAuthError = undefined
       await sendDiagnostics(request.nextUrl.pathname, {
