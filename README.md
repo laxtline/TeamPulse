@@ -211,7 +211,7 @@ After seeding, log in at **http://localhost:3000**:
 | Role | Email | Password |
 |------|-------|----------|
 | **Admin** | `admin@teampulse.ac` | `Passcode@9938` |
-| **Member** | `arjun@teampulse.ac` | `Passcode@9938` |
+| **Owner** | `arjun@teampulse.ac` | `Passcode@9938` |
 | **Member** | `priya@teampulse.ac` | `Passcode@9938` |
 | **Member** | `rohan@teampulse.ac` | `Passcode@9938` |
 
